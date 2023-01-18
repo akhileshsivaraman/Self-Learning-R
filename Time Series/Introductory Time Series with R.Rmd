@@ -1,0 +1,209 @@
+---
+title: "Introductory Time Series with R"
+output: pdf_document
+---
+
+------------------------------------------------------------------------
+
+# 1 Time Series Data
+
+### Plots, trends and seasonal variation
+
+```{r}
+data("AirPassengers")
+a <- AirPassengers
+```
+
+Class of the data is "ts" (time series)\
+`ts()` can be used to create a time series object\
+`as.ts()` coerces an object to time series\
+
+Time series plots emphasise patterns and features of the data
+
+```{r}
+plot(a, ylab = "Passengers (1000s)")
+```
+
+They also expose outliers and erroneous values\
+Note: A common erroneous value is due to missing data being coded using negative values. These shouldn't be included in observations when fitting a model to data\
+
+To get a clearer view of a trend, seasonal effects can be removed by aggregating data\
+
+```{r}
+b <- aggregate(a) # sum each year
+b
+plot(b) # an increasing trend at the annual level
+boxplot(a ~ cycle(a)) # seasonal effect (each cycle is a month)
+```
+
+We can extract a part of the times series using `window()`
+
+```{r}
+window(a, start = c (1949, 4), end = (1955), freq = T) # takes the 4th month of each year in the time series starting from 1949 and ending in 1955
+```
+
+#### Moving averages and decomposing a time series
+
+We can estimate trends and seasonal effects using a moving average method using decompose()
+
+```{r}
+aDecomposed <- decompose(a)
+```
+
+As a result of the moving average method, the first average value we can calculate is for July. This is because the period is 12 months so the first 6 and last 6 months do not have enough months around them to calculate a moving average
+
+```{r}
+plot(aDecomposed)
+```
+
+The observed series is the time series data in its original form\
+
+The trend is the time series data aggregated with seasonal effects and errors removed
+
+```{r}
+trend <- aDecomposed$trend
+```
+
+Seasonal effect describes what happens within a cycle
+
+```{r}
+seasonal <- aDecomposed$seasonal
+```
+
+Random/error term is a sequence of correlated random variables with a mean of zero
+
+```{r}
+random <- aDecomposed$random
+```
+
+#### Time series models
+
+1.  additive - observed series = trend + seasonal effect + error term
+2.  multiplicative - observed series = trend x seasonal effect + error term (the seasonal effect tends to increase as the trend increases)
+3.  additive decomposition - log(observed series) = trend + seasonal effect + error term (the random variation is modelled by a multiplicative factor and the variable is positive)
+
+------------------------------------------------------------------------
+
+# 2 Correlation
+
+Once we have identified trends and seasonal effects, we can remove them to isolate the random component\
+The random component is not always well-modelled by independent random variables. Often consecutive variables are correlated. Identifying these correlations can improve forecasts
+
+This data set is a time series of wave heights produced by a wave machine over 39.7 seconds with a sampling interval of 0.1 seconds
+
+```{r}
+waves <- read.table("wave.dat.txt", header = T)
+wavests <- ts(waves)
+plot(wavests)
+plot(wavests[1:60], type = "l")
+```
+
+In this example, there is a tendency for consecutive values to be similar. There is also a quasi-periodicity but no fixed frequency in this series
+
+#### Autocorrelation\
+
+Autocorrelation (also knowns as serial correlation) = the correlation of a variable with itself at different times
+
+Autocorrelation is a representation of the degree of similarity between a given time series and a lagged version of itself over successive time intervals. It is similar to the correlation between two different time series but autocorrelation uses the same time series twice
+
+We can calculate the autocorrelation of the times series using `acf()`. The autocorrelations of x are stored in the acf output. The first value is the autocorrelation of x with itself at the same time point so it equals 1. The subsequent values are the autocorrelation values of x with x at other time points. The difference between time points are defined by lag. (lag = the number of time steps between variables)
+
+```{r}
+autocor <- acf(wavests)
+autocor$acf[2] # the variables are 1 time step apart
+```
+
+In short, autocorrelations are useful for measuring the relationship between a variable's current value and its past values
+
+### Correlogram
+
+A plot showing how autocorrelation changes as lag increases after removing trends and seasonal variation. It is a plot of the random component
+
+```{r}
+plot(autocor)
+```
+
+The unit of the lag is the sampling interval. In this case, lag = 0.1 seconds\
+
+The range within the dotted lines represents the null hypothesis (5% confidence level). Where autocorrelation falls outside the range, we have evidence against the null hypothesis\
+If correlation at every time point is equal to 0, we expect 5% of the autocorrelation estimates to fall outside the range with the neighbouring values more likely to be statistically significant
+
+##### example based on the air passenger series
+
+```{r}
+# we use decompose() to estimate the random component
+aDecomposed <- decompose(a, "multiplicative") # we use the multiplicative type because the seasonal effect tends to increase as the trend increases
+plot(ts(aDecomposed$random[7:138])) # a moving average cannot be calculated the first and last 6 time points
+acf(aDecomposed$random[7:138])
+```
+
+#### Exercises
+
+##### Draw scatterplots and calculate correlation
+
+Varnish Data
+
+```{r}
+varnish <- read.table("varnish.dat.txt", header = T)
+# varnish data set describes the amount of catalyst in a varnish over the drying time of a set volume in a petri dish
+plot(varnish, xlab = "Amount of catalyst in varnish", ylab = "Drying time")
+cor(varnish$x, varnish$y)
+```
+
+Guess What Data
+
+```{r}
+guess <- read.table("guesswhat.dat.txt", header = T)
+plot(guess)
+cor(guess$x, guess$y)
+```
+
+------------------------------------------------------------------------
+
+# 3 Forecasting Strategies
+
+### Leading variables
+
+An efficiency method of forecasting one variable is to find a related variable that leads it by one or more time intervals. The closer the relationship and the longer the lead time, the better this method is.
+
+```{r}
+approvalActivity <- read.table("ApprovActiv.dat.txt", header = T)
+```
+
+This data set lists the value of building work being done each quarter between March 1996 and September 2006 - approvals = total dwellings per month averaged over the quarter - activity = the value over the past quarter
+
+We create a time series for each variable
+
+```{r}
+approvalsTs <- ts(approvalActivity$Approvals, start = c(1996, 1), frequency = 4)
+activityTs <- ts(approvalActivity$Activity, start = c(1996, 1), frequency = 4)
+ts.plot(approvalsTs, activityTs, lty = c(1,2))
+legend(x = "bottomright", legend = c("Approvals", "Activity"), lty = c(1,2))
+```
+
+Activity tends to lag approvals by a quarter. We quantify the relationship between two time series with cross-correlation. Cross-correlation is a measurement that tracks the movement of two or more sets of time series data relative to one another. It measures the similarity of the time series as a function of displacement (i.e. the lag) of one relative to the other.
+
+To calculate the cross-correlation we use `ts.union()` and `acf()`. `ts.union()` binds time series with a common frequency
+
+```{r}
+acfApprovalActivity <- acf(ts.union(approvalsTs, activityTs)) # this returns correlograms for the two variables and the cross-correlograms
+print(acf(ts.union(approvalsTs, activityTs))) # prints a table describing autocorrelation and cross-correlation by lag (in console, variable lags variable in table)
+```
+
+If the variables are independent, we expect 5% of sample correlations to lie outside the dashed lines\
+Several of the cross-correlations at the first few negative lags (bottom left graph, reading from 0 leftwards) cross the threshold indicating that approvals lead activity
+
+The cross-correlation factor can be calculated for any two time series that overlap. But, if they both have similar trends or seasonal effects, these will dominate. We can remove the trends and seasonal effects using `decompose()`
+
+```{r}
+approvalsTsDecomposed <- decompose(approvalsTs)
+approvalsTsDecomposedRandom <- window(approvalsTsDecomposed$random, start = c(1996, 3), end = c(2006, 1)) # decompose uses a moving average so the first and last few values are NA; removing those NA values is required for the next step
+activityTsDecomposed <- decompose(activityTs)
+activityTsDecomposedRandom <- window(activityTsDecomposed$random, start = c(1996, 3), end = c(2006, 1))
+acfApprovalActivityRandom <- acf(ts.union(approvalsTsDecomposedRandom, activityTsDecomposedRandom))
+print(acfApprovalActivityRandom)
+```
+
+Again, we see that the cross-correlation factor crosses the threshold at the first few negative lags (in the bottom left graph). This further indicates that approvals lag activity by a quarter or two.
+
+### Bass Model
