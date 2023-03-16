@@ -1,6 +1,6 @@
 ---
 title: "Introductory Time Series with R"
-output: pdf_document
+output: html_document
 ---
 
 ------------------------------------------------------------------------
@@ -100,7 +100,7 @@ plot(wavests[1:60], type = "l")
 
 In this example, there is a tendency for consecutive values to be similar. There is also a quasi-periodicity but no fixed frequency in this series
 
-#### Autocorrelation\
+#### Autocorrelation
 
 Autocorrelation (also knowns as serial correlation) = the correlation of a variable with itself at different times
 
@@ -170,7 +170,10 @@ An efficiency method of forecasting one variable is to find a related variable t
 approvalActivity <- read.table("ApprovActiv.dat.txt", header = T)
 ```
 
-This data set lists the value of building work being done each quarter between March 1996 and September 2006 - approvals = total dwellings per month averaged over the quarter - activity = the value over the past quarter
+This data set lists the value of building work being done each quarter between March 1996 and September 2006.
+
+-   approvals = total dwellings per month averaged over the quarter
+-   activity = the value over the past quarter
 
 We create a time series for each variable
 
@@ -207,3 +210,38 @@ print(acfApprovalActivityRandom)
 Again, we see that the cross-correlation factor crosses the threshold at the first few negative lags (in the bottom left graph). This further indicates that approvals lag activity by a quarter or two.
 
 ### Bass Model
+
+A model to describe the adoption and diffusions of a new product. The number of people, *Nt*, who have bought a new product at time, *t*, depends on three parameters:
+
+-   *m* - the total number of people who will buy the product
+-   *p* - the coefficient of innovation
+-   *q* - the coefficient of imitation
+
+The rationale behind he model is that that initial sales will be to people who are interested in the novelty of the product while later sales will be to people who are drawn to the product are first seeing others use it.
+
+#### Example of fitting a Bass model
+```{r}
+# using historic data to estimate parameters of the Bass model for a forecast
+T79 <- 1:10 # defines the year from 1979
+Tdelt <- (1:100)/10 # time from 1979 at an interval of 0.1 years
+sales <- c(840, 1470, 2110, 4000, 7590, 10950, 10530, 9470, 7790, 5890)
+cumsales <- cumsum(sales) # to calculate the total number of people who bought the product in the 10 year period
+bass.nls <- nls(sales ~ M * ( ((P+Q)^2/P) * exp(-(P+Q) * T79)) / (1+(Q/P) * exp(-(P+Q) * T79))^2, # using the non-linear least squares function to 
+                start = list(M = 60640,
+                             P = 0.03,
+                             Q = 0.38))
+summary(bass.nls)
+```
+The starting values of P and Q are typical for a product and the starting value of M is the cumulative sum of the sales over the 10-year period. The output of the summary gives us estimates for *m*, *p* and *q*. This model can then be plotted.
+```{r}
+bass.coef <- coef(bass.nls)
+m <- bass.coef[1]
+p <- bass.coef[2]
+q <- bass.coef[3]
+ngete <- exp(-(p+q) * Tdelt)
+bass.pdf <- m * ((p+q)^2/p) * ngete/(1+(q/p)*ngete)^2 # probability density function
+```
+```{r}
+plot(Tdelt, bass.pdf, xlab = "Years from 1979", ylab = "Cumulative sales", type = "l")
+```
+Using the Bass model on past data gives us values for *m*, *p* and *q*, which can then be used for forecasting.
