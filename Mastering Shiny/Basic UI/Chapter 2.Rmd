@@ -1,0 +1,104 @@
+---
+title: "Chapter 2: Basic UI"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Inputs
+We use *input() functions to insert input controls into the UI
+
+
+### Common structure
+The first argument in input functions is `inputID`. This is an identifier used to connect the front and back ends. It is accessed using `input$` in the server.
+
+inputIDs can only contain letters, numbers and underscores. Other characters are not allowed. They must also be unique.
+
+The second parameter in most input functions is `label`. This creates a human readable label for the input control. This is displayed in the UI to the user.
+
+The third parameter is typically `value`, which lets you set a default value for the input control.
+
+
+### Free text inputs
+Text-based inputs:
+
+* `textInput()`
+* `passwordInput()`
+* `textAreaInput()`
+
+If you want the text to have certain properties, you can use `validate()`.
+
+
+### Numeric inputs
+
+* `numericInput()`
+* `sliderInput()` - value can take a 2-length vector to create a range slider
+
+
+### Date inputs
+
+* `dateInput()` - for a single date
+* `dateRangeInput()` - to get a range between two dates
+
+You can set `format`, `language` and `weekstart`.
+
+
+### Limited choices inputs
+
+* `selectInput()`
+  * can enable users to select multiple options with `multiple`
+* `radioButtons()`
+  * `choiceNames` determines what is shown to the user
+  * `choiceValues` determines what is sent to the server
+* `checkboxInput()` - for single yes/no questions
+* `checkGroupInput()` - like radiobuttons but users can pick more than one option
+
+
+### File uploads input
+
+* `fileInput()`
+
+This requires special handling in the server (chapter 9)
+
+
+### Action buttons inputs
+
+* `actionButton()`
+* `actionLink()`
+
+The appearances of these elements can be changed using the `class` argument. This works by setting the `class` attribute of the underlying HTML
+
+
+## Outputs
+Outputs in the UI are essentially placeholders that are later filled by the server. Outputs take a unique ID in the first argument. Each output function is paired with a render function that sits in the server.
+
+
+### Text output
+
+* `textOutput()` | `renderText()` - for regular text
+* `verbatimTextOutput()` | `renderPrint()`` - for code or console output
+
+
+### Tables output
+
+* `tableOutput()` | `renderTable()` - for a static table of data, shows all the data at once
+* `dataTableOutput()` | `renderDataTable()` - for dynamic tables, shows a fixed number of rows and controls to change which rows are visible
+
+
+### Plots output
+
+* `plotOutput()` | `renderPlot()`
+
+By default, the output will take up the full width of its container and will be 400px high. These can be overridden with `height` and `width`. `res` is another option and it is recommended that you use `res = 96`.
+
+Plots are actually outputs that can act as inputs. `plotOutput()` has a number of arguments, e.g. `click`, `dbclick` and `hover`, that can be used to handle user interactions with the plot. The input of those interactions takes the form of `input$ID_hover`
+
+
+### Downloads
+
+* `downloadButton()`
+* `downloadLink()`
+
+These require different server techniques (chapter 9)

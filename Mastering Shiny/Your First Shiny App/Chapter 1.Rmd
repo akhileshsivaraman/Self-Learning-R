@@ -1,0 +1,80 @@
+---
+title: "Chapter 1: Your First Shiny App"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Create app directory and file
+The simplest way to create a shiny app is by creating a new directory for your app and have a file called `app.R`. The `app.R` file will have 4 key components:
+
+- `library(shiny)`
+- the UI
+- the server
+- `shinyApp(ui, server)`
+
+## Adding UI controls
+Example UI
+```{r}
+ui <- fluidPage( # a layout function that sets up the basic visual structure of the app
+  
+  selectInput("dataset", label = "Dataset", choices = ls("package:datasets")), # an input control that lets the user interact with the app
+  
+  verbatimTextOutput("summary"), # an output control telling Shiny where to render the output
+  
+  tableOutput("table") # also an output control
+)
+```
+The functions above all generate HTML. If you call them outside a shiny app, you'll get HTML printed out in the console
+
+
+## Adding behaviour
+We bring the outputs in the UI to life by defining them in the server. We tell shiny how to perform a computation rather than to do it.
+
+Example server
+We provide shiny with a recipe to produce outputs. We give those outputs an ID and place them in a list-like object called output. The recipe is wrapped in a render function, which produces a particular type of output. Render functions are paired with output functions from the UI.
+```{r}
+server <- function(input, output, session) {
+  output$summary <- renderPrint({
+    dataset <- get(input$dataset, "package:datasets")
+    summary(dataset)
+  })
+  
+  output$table <- renderTable({
+    dataset <- get(input$dataset, "package:datasets")
+    dataset
+  })
+}
+```
+As we tell the server how to produce outputs, they are reactive. As the values of inputs in the UI change, the outputs are recomputed.
+
+
+## Reducing duplication with reactive expressions
+The above server example contains duplication:
+`dataset <- get(input$dataset, "package:datasets")`
+
+In regular R scripting, we use either capture a value in a variable or capture the computation in a function. Neither of these approaches fully work with shiny so we use reactive expressions.
+
+Reactive expressions are blocks of code wrapped in `reactive({...})` and assigning it to a variable. This variable is then called like a function.
+
+Reactive expressions are called the first time it runs and then only when it needs to be updated because an input has changed.
+```{r}
+server <- function(input, output, session) {
+  # Create a reactive expression
+  dataset <- reactive({
+    get(input$dataset, "package:datasets")
+  })
+
+  output$summary <- renderPrint({
+    # Use a reactive expression by calling it like a function
+    summary(dataset())
+  })
+  
+  output$table <- renderTable({
+    dataset()
+  })
+}
+```
+
