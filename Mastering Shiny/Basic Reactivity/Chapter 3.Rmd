@@ -1,0 +1,165 @@
+---
+title: 'Chapter 3: Basic Reactivity'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The key idea of reactive programming is to specify a graph of dependencies so that when an input changes, all related outputs are automatically updated. 
+
+
+## The server function
+Shiny invokes the server function when a new session starts. When the server, like any other function, is called it creates a new local environment that is independent of every other invocation of the function. This allows each session to have a unique state.
+
+
+### Input
+The input is a list-like object that contains all the input data sent from the browser, named according to the inputID. 
+
+Unlike a typical list, input objects are read-only. You cannot modify an input object inside the server function because input reflects what is happening in the browser. We don't want to be able to change input objects in R because that would introduce the potential for inconsistencies.
+
+Input is also selective about who is allowed to read it. To read from an input, you must be in a reactive context created by a `render*()` function or `reactive()`
+
+
+### Output
+Output is also a list-like object. Objects are named according to the outputID. Output objects are always used with a `render*()` function like so:
+`output$outputID <- render*()`
+
+The `render*()` function does two things:
+
+* it sets up a special reactive context that tracks the inputs the output uses
+* it converts the output into HTML suitable for display on a webpage
+
+Outputs objects cannot be read.
+
+
+## Reactive programming
+You don't need to tell an output when to update, Shiny figures it out for you. With reactive programming with tell shiny how to compute values we want displayed in the UI.
+
+
+### Imperative vs declarative programming
+Imperative programming: you issue a specific command and it's carried out immediately. This is how we do typical R scripting. 
+
+Declarative programming: you express higher-level goals or describe important constraints and rely on someone else to decide how and/or when to translate that into action. This is how we code in shiny.
+
+
+### Laziness
+Shiny apps will only ever do the minimal amount of work needed to update the outputs.
+
+
+### Reactive graphs
+As Shiny is lazy, code is only run when it is needed so we can't just read it top to bottom to understand the order of execution. To understand the order of execution, reactive graphs are more useful. These describe how inputs and outputs are related, i.e. which elements have reactive dependencies. Reactive expressions are also elements that can be found in a reactive graph.
+
+
+### Execution order
+The order of your code runs in is determined by the reactive graph. You could actually flip some of your reactive code around and it'll run without error because shiny is lazy. Don't do this though because it makes reading your code difficult. 
+
+
+## Reactive expresions
+Reactive expressions are tools to reduce duplication in your code. They take inputs and produce outputs but also behave like both inputs and outputs. Like inputs, the result can be used in an output. Like outputs, they depend on inputs and know when they need to be updated. 
+
+Producers = reactive inputs and expressions
+Consumers = reactive expressions and outputs
+
+Extracting imperative code out into defined functions is an important technique in software development. It makes the app easier to understand and isolate concerns. The functions outside of the app focus on the computation while the code inside the app focusses on responding to the user.
+
+To make apps as efficient as we can, we ideally have one computation per reactive expression or `render*()` function.
+
+
+## Controlling timing of evaluation
+### Timed invalidation
+We can increase the frequency of updates with `reactiveTimer()`. It has a dependency on the current time. It takes a time in ms as a parameter and once the time has elapsed, it is invalidated. This can be used to create an animation. 
+
+Example use:
+```{r}
+server <- function(input, output, session) {
+  timer <- reactiveTimer(500)
+  
+  x1 <- reactive({
+    timer()
+    rpois(input$n, input$lambda1)
+  })
+  x2 <- reactive({
+    timer()
+    rpois(input$n, input$lambda2)
+  })
+  
+  output$hist <- renderPlot({
+    freqpoly(x1(), x2(), binwidth = 1, xlim = c(0, 40))
+  }, res = 96)
+}
+```
+`timer()` is called in x1 and x2 so that they are dependent on `timer()` and they don't actually use its value
+
+
+### On click
+When computations are expensive, we don't want the app updating every time an input is changed. This would create a backlog and the app would stop responding. It can be helpful to require the user to opt-in to perform an expensive computation.
+
+We can use the `actionButton()` and `eventReactive()`:
+```{r}
+ui <- fluidPage(
+  fluidRow(
+    column(3, 
+      numericInput("lambda1", label = "lambda1", value = 3),
+      numericInput("lambda2", label = "lambda2", value = 5),
+      numericInput("n", label = "n", value = 1e4, min = 0),
+      actionButton("simulate", "Simulate!")
+    ),
+    column(9, plotOutput("hist"))
+  )
+)
+
+server <- function(input, output, session) {
+  x1 <- eventReactive(input$simulate, {
+    rpois(input$n, input$lambda1)
+  })
+  x2 <- eventReactive(input$simulate, {
+    rpois(input$n, input$lambda2)
+  })
+
+  output$hist <- renderPlot({
+    freqpoly(x1(), x2(), binwidth = 1, xlim = c(0, 40))
+  }, res = 96)
+}
+```
+This removes the reactive dependencies such that x1 and x2 (outputs) don't automatically change when n and lambda (inputs) are changed. x1 and x2 are only dependent on simulate now (i.e. when its value changes, re-calculate x1 and x2) and they simply use the values from n and lambda.
+
+`eventReactive()` takes two arguments. The first specifies what to take a dependency on and the second specifies what to compute (so wrap the expression).
+
+
+## Observers
+For actions that don't affect how your app looks, e.g. saving a file, sending data to an API, updating a database, etc. 
+
+One type of observer is `observeEvent()`:
+
+* can be an important debugging tool
+* has two important arguments:
+  * eventExpr - the input or expression to take a dependency on
+  * handlerExpr - the code that will be run
+
+Example:
+```{r}
+ui <- fluidPage(
+  textInput("name", "What's your name?"),
+  textOutput("greeting")
+)
+
+server <- function(input, output, session) {
+  string <- reactive(paste0("Hello ", input$name, "!"))
+  
+  output$greeting <- renderText(string())
+  observeEvent(input$name, {
+    message("Greeting performed")
+  })
+}
+```
+In this example, whenever name is changed, "Greeting performed" is printed in the console.
+
+`observeEvent()` is similar to `eventReactive()` but there are two important differences:
+
+* you don't assign the result of `observeEvent()` to a variable
+* you cannot refer to the result of `observeEvent()` from other reactive consumers
+
+`observeEvent()` = if something changes here, do this
+`eventReactive()` = if something happens here, compute this output
