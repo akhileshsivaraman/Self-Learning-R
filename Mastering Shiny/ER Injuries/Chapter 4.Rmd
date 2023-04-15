@@ -1,0 +1,68 @@
+---
+title: 'Chapter 4: ER Injuries'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+We explore a data set from the National Electronic Injury Surveillance System. 
+```{r}
+#---- load libraries and data ----
+library(tidyverse)
+library(vroom)
+
+injuries <- vroom("neiss/injuries.tsv")
+population <- vroom("neiss/population.tsv")
+products <- vroom("neiss/products.tsv")
+```
+
+We pick a product and explore the patterns in the data
+```{r}
+# injuries that involve the toilet
+toilet_injuries <- injuries |>
+  filter(prod_code == 649)
+
+# most injuries involving the toilet occur at home
+toilet_injuries |>
+  count(location, wt = weight, sort = T)
+
+# the head is most often hurt in injuries involving the toilet
+toilet_injuries |>
+  count(body_part, wt = weight, sort = T)
+
+# many different diagnoses
+toilet_injuries |>
+  count(diag, wt = weight, sort = T)
+
+# injuries become more frequent in women than in men past the age of ~50
+ggplot(toilet_injuries |>
+         count(age, sex, wt = weight)) +
+  geom_line(aes(age, n, colour = sex)) +
+  ylab("Estimated number of injuries") +
+  theme_classic()
+
+
+# after standardising for population size, we see an increase in injuries for men and women past 50 but at around 80, injuries skyrocket for women
+pop_adjusted_toilet_injuries <- toilet_injuries |>
+  count(age, sex, wt = weight) |>
+  left_join(population, by = c("age", "sex")) |>
+  mutate(rate = n/population*10000)
+
+ggplot(pop_adjusted_toilet_injuries) +
+  geom_line(aes(age, rate, colour = sex), na.rm = T) +
+  ylab("Estimated number of injuries") +
+  theme_classic()
+
+# we can sample the data to develop hypotheses
+toilet_injuries |>
+  slice_sample(n = 10) |>
+  pull(narrative)
+```
+
+Having done that exploration, we want to explore the data for other products but there are a number of products. We could use a shiny app to do this easily.
+
+
+## Prototype
+Before developing a shiny app, it's a good idea to work out the basic mechanics first. 
