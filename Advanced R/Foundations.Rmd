@@ -1,0 +1,449 @@
+---
+title: 'Advanced R: Foundations'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+https://adv-r.hadley.nz/foundations-intro.html
+
+# Vectors
+## Atomic Vectors
+4 primary types:
+* logical
+* integer
+* double
+* character
+
+Integer and double vectors are collectively known as numeric vectors
+
+### scalars
+Each of the four primary vector types has a special syntax to create an individual value (scalar).
+
+* logical: TRUE or FALSE
+* doubles: decimal, scientific or hexadecimal numbers
+  * also have three special values:
+    * Inf
+    * -Inf
+    * NaN (not a number)
+* integers: integers must be followed by L. They can be written in scientific and hexadecimal forms too
+* strings/characters: surrounded by "". Special characters are escaped with "\"
+
+### making longer vectors with `c()`
+`c()` short for combine. If the inputs of `c()` are more atomic vectors, it flattens them.
+
+You can determine the type of a vector with `typeof()` and length with `length()`.
+
+### missing values
+Represented with NA. Test for the presence of missingness with `is.na()`
+
+### testing and coercion
+`is.*()` functions to test if a vector is of a given type.
+
+For atomic vectors, type is a property of the entire vector. All elements must be the same type. When you combine different types they are coerced in this order: characters -> double -> integer -> logical.
+
+When logical vectors are coerced to numeric, TRUE = 1 and FALSE = 0.
+
+Mathematical functions coerce automatically but you can deliberately coerce with `as.*()` functions. This can lead to the introduction of NAs where coercion is failed.
+
+
+## Attributes
+### getting and setting
+Attributes can be thought of as name-value pairs that attach metadata to an object.
+* `attr()`: sets and gets individual attributes
+* `attributes()`: gets attributes en masse
+* `structure()`: set en masse
+
+Most attributes are lost through most operations. Only names and dimensions are routinely preserved. Names are character vectors giving each element a name and dim is an integer vector used to turn vectors into matrices or arrays.
+
+### names
+Ways to name a vector:
+* when creating it: `x <- c(a = 1, b = 2, c = 3)`
+* `names()`: `x <- 1:3`
+              `names(x) <- c("a", "b", "c")`
+* `setnames()`: `x <- setNames(1:3, c("a", "b", "c"))`
+
+Remove names from a vector with `unname()` or `names(x) <- NULL`
+
+### dimensions
+Adding a dim attribute allows a vector to behave like a 2D matrix or a multi-dimensional array. 
+
+Ways to create matrices and arrays:
+* `matrix()`
+* `array()`
+* `dim()`
+
+Many of the functions for working with vectors have equivalents for matrices and arrays. E.g. names() for vectors and rownames() and colnames() for matrices and dimnames() for arrays.
+
+
+## S3 Atomic Vectors
+The class attribute: having one turns an object into an S3 object. S3 objects behave differently when passed to a generic function. Every S3 object is built on top of a base type and often stores additional information in other attributes.
+
+Four common S3 vectors:
+* categorical vectors: where values comes from a fixed set of levels recorded in factor vectors
+* dates: recorded in date vectors
+* date-times: POSIXct vectors
+* durations: difftime vectors
+
+### factors
+Characteristics:
+* a vector that can only take a predefined value
+* used to store categorical vectors
+* built on top of an integer vector
+* has two attributes:
+  * class: "factor", makes it behave differently from regular integer vectors
+  * levels: defines the set of allowed values
+
+Factors are useful when you know the set of possible values but they're not all present in the dataset. Some base R functions automatically convert character vectors to categorical vectors/factors. But, they do this without knowing the full set of values the data can assume. It is better to manually set character vectors to factors with your knowledge of all the theoretical values that can be taken. You can suppress the conversion with `stringsAsFactors = FALSE`.
+
+Factors are built on top of integers so be careful when treating them like strings. Some functions recognise this and automatically coerce factors to strings, others don't. It is best to explicitly convert factors to character vectors before manipulating them like strings.
+
+### dates
+Characteristics:
+* built on top of double vectors
+* only one attribute
+  * class: "Date"
+
+The value of the double can viewed by removing the class with `unclass()` and it represent the number of days since 1970-01-01. 
+
+### date-times
+Characteristics:
+* built on top of double vectors (the value of the double represent the number of seconds since 1970-01-01)
+* attributes:
+  * class: "POSIXct" or "POSIXlt"
+  * tzone: time zone which affects how the time is printed
+
+### durations
+Characteristics:
+* represent the amount of time between pairs of dates or date-times
+* built on top of doubles
+* attributes:
+  * class: "difftime:
+  * units: unit of time
+
+
+## Lists
+* each element of a list can be of any type, not just a vector
+* elements of a list are references (not copies of components) so the size of a list is much smaller than might be expected
+* recursive - can contain other lists
+  * `c()` will combine several lists into one
+  * this property makes them fundamentally different from atomic vectors
+
+### matrices and arrays
+As with atomic vectors, the dimension attribute can be used to create list-matrices and list-arrays. These are very rare data structures but they can be useful to arrange objects in a grid-like structure
+
+
+## Data Frames and Tibbles
+Data frame characteristics:
+* it is a named list of vectors
+* the vectors have attributes for column names, row names and its class ("data.frame")
+* all vectors of the list must be the same length (unlike regular lists)
+
+Tibbles are modern data frames. In short, they do less and complain more. They share the same structure as data frames. The only difference is the class vector: "tbl_df", which allows them to behave in different ways.
+
+Tibbles are lazy:
+* they do not coerce inputs (e.g. strings to factors)
+* do not transform non-syntactic names
+* only recycle values in a column, if the vector is of length one (i.e. the cells in the column can only take on one value)
+
+### row names
+Data frames are not like matrices. Data frames are not transposable. Rows and columns are not interchangeable.
+
+Row names can be undesirable:
+* metadata is data. Storing it in a different way to the rest of the data makes it harder to use
+* row names are a poor abstraction for labelling rows because they only work when a row can be identified by a single string. Labelling and retrieving fails when you want to identify a row by a non-character vector or with multiple vectors
+* row names must be unique
+
+Due to the above reasons, tibbles do not support row names.
+
+### subsetting
+Tibbles are surly:
+* subsetting with [] always returns a tibble
+* subsetting with $ will only return a variable with the exact name. It does not perform partial matching as with data frames
+
+using [["variable name"]] is the cleanest method for extracting a single column
+
+### list columns
+As a data frame is a list of vectors, it is possible for a column to be a list. And because a list can contain any other object, you can place any object in a data frame.
+
+To place a list-column in a data frame, you need to add it after creating a data frame or by wrapping the list in `I()`.
+To place a list-column in a tibble, you can add it during creation with `list()`.
+
+### matrix and data frame columns
+It is also possible to have a matrix or array as a column. Matrices and arrays must be added after the data frame is created or wrapped in `I()`. Many functions assume that all columns are vectors in a data frame so be careful when working with a matrix/data frame column.
+
+
+## NULL
+NULL is always length zero and never has attributes.
+
+Two common uses of NULL:
+* to represent an empty vector
+* to represent an absent vector (NULL can be set as the default of an argument in a function)
+
+
+# Subsetting
+## Selecting Multiple Elements
+[] is used to select any number of elements from a vector
+
+### atmomic vectors
+There are 6 things that you can use to subset a vector:
+* positive integers
+  * return elements at the specified positions
+  * duplicate indices will duplicate values (i.e. obtain them more than once)
+  * real numbers are silently truncated into integers
+* negative integers
+  * exclude elements at the specified positions
+  * cannot be mixed with positive integer subsetting
+* logical vectors
+  * selects elements where the corresponding logical value is TRUE
+  * e.g. `x[c(TRUE, TRUE, FALSE, FALSE)]` would return elements in the TRUE positions
+  * e.g. `x[x > 3]` would return elements that meet the condition
+  * when the length of the object and the vector differ, recycling rules are employed. This is convenient and easy to use when one of them have a length of one
+* nothing/blank
+  * x[]
+  * returns the original vector
+* zero
+  * x[0]
+  * returns a zero-length vector
+* character vectors
+  * x["name"]
+  * returns elements with matching names
+  * can subset for more than one vector c("name", "name")
+  * factors aren't subsetted as factors, they are subsetted as integer vectors so that attribute will be lost in the output
+
+### lists
+Works in the same way as subsetting an atomic vector.
+[] returns a list while [[]] and $ return elements
+
+### matrices and arrays
+Higher dimensional structures can be subset in three ways:
+* multiple vectors
+* single vectors
+* matrix
+
+The most common way of subsetting a >1D object is to supply a 1D index for each dimension separated by a comma. Blank subsetting here allows you to retain all the values in a dimension.
+Subsetting with [] simplifies the result to the lowest possible dimensionality.
+
+Matrices and arrays are just vectors with special attributes so they can be subsetted with a single vector as though they were a 1D vector. (reading of the vector goes column by column)
+```{r}
+vals <- outer(1:5, 1:5, FUN = "paste", sep = ",")
+vals
+#>      [,1]  [,2]  [,3]  [,4]  [,5] 
+#> [1,] "1,1" "1,2" "1,3" "1,4" "1,5"
+#> [2,] "2,1" "2,2" "2,3" "2,4" "2,5"
+#> [3,] "3,1" "3,2" "3,3" "3,4" "3,5"
+#> [4,] "4,1" "4,2" "4,3" "4,4" "4,5"
+#> [5,] "5,1" "5,2" "5,3" "5,4" "5,5"
+
+vals[c(4, 15)]
+#> [1] "4,1" "5,3"
+```
+
+Data structures with >1 dimension can be subsetted with an integer matrix (or a character matrix, if named). Each row in the matrix specifies the location of one value and each column corresponds to a dimension in the array. This means that a 2 column matrix can be used to subset a 2D object, a 3 column matrix for a 3D object, and so on.
+```{r}
+select <- matrix(ncol = 2, byrow = TRUE, c(
+  1, 1, # first value refers to first row and second value to first column
+  3, 1,
+  2, 4
+))
+vals[select]
+#> [1] "1,1" "3,1" "2,4"
+```
+
+### data frames and tibbles
+Data frames have the characteristics of both lists and matrices:
+* when subsetting with a single index, they behave like lists and index the columns
+* when subsetting with two indices, they behave like matrices
+
+Note: matrix subsetting simplifies by default, list setting does not
+
+Subsetting a tibble with [] always returns a tibble
+
+### preserving dimensionality
+Subsetting a matrix or data frame with a single number, name or logical vector containin one TRUE will simplify the returned output. To preserve dimensionality use `drop = FALSE`. This can be useful when you want to work on the output of a column with functions that require the input to be a data frame (rather than transforming it back to a data frame with `as.data.frame()`). 
+
+Tibbles default to `drop = TRUE` so you don't need to worry about losing dimensionality with them.
+
+## Selecting a Single Element
+[[]] is used to extract single items. $ is a useful shorthand for [[]]
+
+### [[]]
+Using [] with a list returns a smaller list. [[]] returns the object within the specified item.
+
+```{r}
+x <- list(1:3, "a", 4:6)
+x[1]
+x[[1]]
+```
+
+[[]] can only return a single item so it must be used with a single positive integer or a single string. Using a vector with [[]] will subset recursively, i.e. `x[[c(1, 2)]]` is equivalent to `x[[1]][[2]]`.
+
+### $
+The one important difference between $ and [[]] is $ does partial matching. You can set `options(warnPartialMatchDollar = TRUE)` or use tibbles instead of data frames to avoid partial matching.
+
+### @ and `slot()`
+For S4 objects:
+* @ = $ (more restrictive as it returns an error if the slot does not exist)
+* `slot()` = [[]]
+
+## Subsetting and Assignment
+All subsetting operators can be combined with assignment to modify selected values of an input vector. `x[i] <- value`
+
+```{r}
+x <- 1:5
+x[c(1, 2)] <- c(101, 102)
+x
+#> [1] 101 102   3   4   5
+```
+Subassignment works best when the length of i is the same as the length of value (avoids recycling).
+
+With lists, you can use `x[[i]] <- NULL` to remove a component. To add a literal NULL, use `x[i] <- list(NULL)`.
+
+Subsetting with nothing can be seful with assignment because it preserves the original structure of the object.
+```{r}
+mtcars[] <- lapply(mtcars, as.integer)
+is.data.frame(mtcars)
+#> [1] TRUE
+
+mtcars <- lapply(mtcars, as.integer)
+is.data.frame(mtcars)
+#> [1] FALSE
+```
+
+
+## Applications
+### lookup tables
+Character matching is a powerful way to create lookup tables
+```{r}
+x <- c("m", "f", "u", "f", "f", "m", "m")
+lookup <- c(m = "Male", f = "Female", u = NA)
+lookup[x]
+#>        m        f        u        f        f        m        m 
+#>   "Male" "Female"       NA "Female" "Female"   "Male"   "Male"
+```
+
+### matching and merging by hand
+You can create more complex lookup tables with multiple columns of information
+```{r}
+grades <- c(1, 2, 2, 3, 1)
+
+info <- data.frame(
+  grade = 3:1,
+  desc = c("Excellent", "Good", "Poor"),
+  fail = c(F, F, T)
+)
+
+id <- match(grades, info$grade)
+id
+#> [1] 3 2 2 1 3
+info[id, ]
+#>     grade      desc  fail
+#> 3       1      Poor  TRUE
+#> 2       2      Good FALSE
+#> 2.1     2      Good FALSE
+#> 1       3 Excellent FALSE
+#> 3.1     1      Poor  TRUE
+```
+
+### random samples and bootstraps
+You can use integer indices to randomly sample or bootstrap a vector or data frame. Using `sample(n)`, you can generate a random permutation of 1:n and then use the results to subset the values.
+```{r}
+df <- data.frame(x = c(1, 2, 3, 1, 2), y = 5:1, z = letters[1:5])
+
+# Randomly reorder
+df[sample(nrow(df)), ]
+#>   x y z
+#> 5 2 1 e
+#> 3 3 3 c
+#> 4 1 2 d
+#> 1 1 5 a
+#> 2 2 4 b
+
+# Select 3 random rows
+df[sample(nrow(df), 3), ]
+#>   x y z
+#> 4 1 2 d
+#> 2 2 4 b
+#> 1 1 5 a
+
+# Select 6 bootstrap replicates
+df[sample(nrow(df), 6, replace = TRUE), ]
+#>     x y z
+#> 5   2 1 e
+#> 5.1 2 1 e
+#> 5.2 2 1 e
+#> 2   2 4 b
+#> 3   3 3 c
+#> 3.1 3 3 c
+```
+
+#### ordering (integer subsetting)
+`order()` takes a vector as an input and returns an integer vector describing how to order the subsetted vector
+```{r}
+x <- c("b", "c", "a")
+order(x)
+#> [1] 3 1 2
+x[order(x)]
+#> [1] "a" "b" "c"
+```
+
+For two or more dimensions, `order()` and integer subsetting makes it easyy to order rows and columns of an object
+```{r}
+# Randomly reorder df
+df2 <- df[sample(nrow(df)), 3:1]
+df2
+#>   z y x
+#> 5 e 1 2
+#> 1 a 5 1
+#> 4 d 2 1
+#> 2 b 4 2
+#> 3 c 3 3
+
+df2[order(df2$x), ]
+#>   z y x
+#> 1 a 5 1
+#> 4 d 2 1
+#> 5 e 1 2
+#> 2 b 4 2
+#> 3 c 3 3
+df2[, order(names(df2))]
+#>   x y z
+#> 5 2 1 e
+#> 1 1 5 a
+#> 4 1 2 d
+#> 2 2 4 b
+#> 3 3 3 c
+```
+
+`sort()` can be used to do the same for vectors and `arrange()` for data frames
+
+### expanding aggregated counts (integer subsetting)
+`rep()` and integer subsetting make it easy to uncollapse a data frame where a count column has been added
+```{r}
+df <- data.frame(x = c(2, 4, 1), y = c(9, 11, 6), n = c(3, 5, 1))
+rep(1:nrow(df), df$n)
+#> [1] 1 1 1 2 2 2 2 2 3
+
+df[rep(1:nrow(df), df$n), ]
+#>     x  y n
+#> 1   2  9 3
+#> 1.1 2  9 3
+#> 1.2 2  9 3
+#> 2   4 11 5
+#> 2.1 4 11 5
+#> 2.2 4 11 5
+#> 2.3 4 11 5
+#> 2.4 4 11 5
+#> 3   1  6 1
+```
+
+### removing columns from data frames (character)
+You can set a column to NULL or you can subset to return only the columns you want
+
+### selecting rows based on a condition (logical subsetting)
+Allows you to easily combine condition from multiple columns so it is a good way to extract rows from a data frame.
+e.g. `df[df$column1 == value & df$column2 != value, ]
+
+### boolean algebra vs sets (logical and integer)
