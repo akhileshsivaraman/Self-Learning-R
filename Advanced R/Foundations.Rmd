@@ -703,7 +703,7 @@ print(y ~ x, showEnv = TRUE)
 ```
 
 Disadvantages of ...:
-* you have to carefully to the user where the arguments go and it can be difficult for users to understand the full potential of a function
+* you have to carefully explain to the user where the arguments go and it can be difficult for users to understand the full potential of a function
 * a mispelt argument will not raise an error
 
 ## Exiting a Function
@@ -799,3 +799,522 @@ Knowing the name of the function that underlies a special form is useful for get
 
 
 # Environments
+The environment is the data structure that powers scoping
+```{r}
+library(rlang)
+```
+
+## Environment Basics
+An environment is similar to a named list with four exceptions:
+* every name must be unique
+* names in an environment are not ordered
+* an environment has a parent
+* environments are not copied when modified
+
+### basics
+`rlang::env()` creates an environment. It takes a set of name-value pairs
+```{r}
+e1 <- env(
+  a = FALSE,
+  b = "a",
+  c = 2.3,
+  d = 1:3,
+)
+```
+
+`new.env()` also creates a new environment. (hash and size parameters can be ignored)
+
+The job of a new environment is to bind a set of names to a set of values. An environment is like a bag of names with no order (there is no first element and so on).
+
+Environments can contain themselves because they are not copied when modified.
+
+`env_print()` tells us about an environment and `env_names()` gives us a character vector with the current bindings
+```{r}
+env_print(e1)
+
+env_names(e1)
+```
+
+### important environments
+The current environment is the environment in which code is currently being executed. This is usually the global environment, where all interactive (i.e. outside of a function) computation takes place.
+
+To compare environments use `identical()` rather than `==` because environments are not vectors.
+
+### parents
+The parent of an environment is another environment. Parents are used to implement lexical scoping whereby if a name is not found in an environment, R will look at its parents and so on.
+
+You can set the parent environment by supplying an unnamed argument to `env()`. If there is no parent supplied, it defaults to the current environment
+```{r}
+e2a <- env(d = 4, e = 5)
+e2b <- env(e2a, a = 1, b = 2, c = 3) # e2a is the parent of e2b
+```
+
+`env_parent()` finds the parent of a given environment
+
+The only environment that doesn't have a parent is the empty environment. `env_parents()` shows you all the ancestors of a given environment up to, but not including, the empty environment. It stops at the global environment where you'll see every attached package.
+
+### super assignment <<-
+<- creates a variable in the current environment
+<<- modifies an existing variable found in a parent environment
+If an existing variable is not found, it creates one in the global environment
+
+### getting and setting
+You can get and set elements of an environment with $ and [[]]. But [[]] cannot be used with indices (has to be named/character) and you cannot use []
+
+Two other ways to add bindings to an environment:
+* `env_poke()`: takes a name and a value
+```{r}
+env_poke(e3, "a", 100)
+e3$a
+#> [1] 100
+```
+* `env_bind()`: allows you to bind multiple values
+```{r}
+env_bind(e3, a = 10, b = 20)
+env_names(e3)
+#> [1] "x" "y" "z" "a" "b"
+```
+
+You can determine if an environment has a binding with `env_has()`
+
+Unlike lists, setting an element to NULL does not remove it because sometimes you want a name that refers to NULL. `env_unbind()` "removes" but doesn't delete an object
+```{r}
+e3$a <- NULL
+env_has(e3, "a")
+#>    a 
+#> TRUE
+
+env_unbind(e3, "a")
+env_has(e3, "a")
+#>     a 
+#> FALSE
+```
+
+### advanced bindings
+There are two vairants of `env_bind()`:
+* `env_bind_lazy()`: creates delayed bindings, which are evaluated the first time they are accessed. Delayed bindings create promises so behave like function arguments
+```{r}
+env_bind_lazy(current_env(), b = {Sys.sleep(1); 1})
+
+system.time(print(b)) # b is accessed for the first time here
+#> [1] 1
+#>    user  system elapsed 
+#>    0.00    0.00    1.09
+system.time(print(b)) # b already exists so no delay
+#> [1] 1
+#>    user  system elapsed 
+#>       0       0       0
+```
+The primary use of delayed bindings is in autoload(), which allows R packages to provide datasets that behave like they are loaded in memory, even though they’re only loaded from disk when needed.
+* `env_bind_active()`: creates active bindings which are re-computed every time they are accessed. They are used to implement R6's active fields
+
+
+## Recursing Over Environments
+To operate on every ancestor of an environment, it is convenient to write a recursive function `where()`, which takes two arguments:
+* the name to look for as a string
+* the environment in which to start the search
+
+```{r}
+where <- function(name, env = caller_env()) { # caller_env() is set as the default to use the current environment
+  if (identical(env, empty_env())) {# Base case: we've reached the empty environment and cannot find the binding
+    stop("Can't find ", name, call. = FALSE)
+  } else if (env_has(env, name)) {# Success case: the name exists in this environment
+    env
+  } else { # Recursive case: the name was not found in this environment, try the parent environment
+    where(name, env_parent(env))
+  }
+}
+```
+`where()` in use
+```{r}
+where("yyy")
+#> Error: Can't find yyy
+
+x <- 5
+where("x")
+#> <environment: R_GlobalEnv>
+
+where("mean")
+#> <environment: base>
+```
+
+## Special Environments
+Most environments are created by R
+
+### package environments and the search path
+Each package attached by `library()` becomes one of the ancestors of the global environment. The immediate parent of the global environment is the last attached package, the parent of that package is the package attached before that and so on. If you follow all the packages/parents back, you see the order in which they were attached. This is the search path.
+
+You can view the search path with `base::search()` or `rlang::search_envs()`. The last two environments on the search path are always the same:
+* autoloads - an environment that uses delayed bindings to save memory
+* package:base - also known as base, it is the environment of the base package. It bootstraps the loading of all other packages.
+
+### the function environment
+Function environment = the current environment to which a function binds when it is created. You can get the function environment with `fn_env()`
+
+A function is bound by an environment telling us where to find it and it binds to a function telling us where it find its variables.
+
+### namespaces
+Namespaces ensure that packages can find the right functions even if they have been loaded in different orders (and the ancestry of the environments changes). Every function in a package is associated with a pair of environments:
+* the package environment - the external interface of the package. This is how users find the function in a package
+* the namespace environment - the internal interface of the package, which controls how the function finds its variables
+
+Every namespace environment has the same set of ancestors:
+* imports environment - contains bindings to all the functions used by the package
+* base namespace environment - contains the same bindings as the base environment but it has a different parent
+* global environment - if a binding cannot be found in the imports or the base namespace environments, R looks in the global environment. But this means the code will depend on other loaded packages. R will automatically check and warn about these dependencies. It is unusual for it to be a problem nowadays so this ancestor mainly exists for historical reasons
+
+### execution environments
+Each time a function is called, a new environment is created. The execution environment is the child of the function environment and it is usually ephemeral. The execution environment is garbage collected once execution has finished.
+
+But you can make the execution environment stick around for longer:
+* by explicitly returning it
+```{r}
+h2 <- function(x) {
+  a <- x * 2
+  current_env()
+}
+
+e <- h2(x = 10)
+env_print(e)
+#> <environment: 0x7fe6c8502738>
+#> parent: <environment: global>
+#> bindings:
+#>  * a: <dbl>
+#>  * x: <dbl>
+fn_env(h2)
+#> <environment: R_GlobalEnv>
+```
+* by returning an object with a binding to that environment
+```{r}
+plus <- function(x) {
+  function(y) x + y
+}
+
+plus_one <- plus(1)
+plus_one
+#> function(y) x + y
+#> <environment: 0x7fe6c6cd3ad8>
+
+# the execution environment of plus_one() will capture the execution environment of plus() as its parent
+```
+
+
+## Call Stacks
+The caller environment accessed with `rlang::caller_env()`. The caller environment is the environment from which a function is called. It varies based on how the function is called, not how the function was created.
+
+When a function is called, an execution environment is created and a call stack is created.
+
+### simple call stacks
+A call stack can be viewed by using `traceback()` or `lobstr::cst()`. cst() produces a call stack tree
+
+### lazy evaluation
+A call stack tree is useful when calls happen on different branches (i.e. not one linear process) and is indicative of lazy evaluation
+
+### frames
+Each element of a call stack is a frame (also called an evaluation context). A frame has three important components:
+* an expression - gives the function call (what traceback prints out)
+* an environment - typically the execution environment of a function (except for the global frame which belongs to the global environment)
+* a parent - the previous call in the stack
+
+### dynamic scope
+Dynamic scoping = looking up variables in the call stack rather than in the enclosing environment
+
+Dynamic scoping is rare in programming languages because it makes it much harder to reason about how a function operates - you need to know how a function is defined and the context in which it was called
+
+The main use for dynamic scoping is developing functions that aid interactive data analysis.
+
+
+## As Data Structures
+Environments are also data structures (they're not just there for scoping). They have reference semantics which means they can help solve:
+* avoiding copies of large data - as environments have reference semantics, you'll never accidentally create a copy
+* managing state within a package - explicit environments are useful in packages because they allow you to maintain state across function calls. You can modify objects in a package indirectly like this.
+```{r}
+my_env <- new.env(parent = emptyenv())
+my_env$a <- 1
+
+get_a <- function() {
+  my_env$a
+}
+set_a <- function(value) {
+  old <- my_env$a
+  my_env$a <- value
+  invisible(old)
+}
+```
+* as a hashmap - a data structure that takes constant, O(1), time to find an object based on its name. Environments provide this behaviour by default, so can be used to simulate a hashmap
+
+
+# Conditions
+The condition system provides a set of tools that allow the author of a function to indicate that something unusual is happening and the user of the function to deal with it.
+
+Conditions are signalled with functions like:
+* `stop()` for errors
+* `warning()` for warnings
+* `message()` for messages
+
+The user can handle them with functions like `tryCatch()` and `withCallingHandlers()`
+
+```{r}
+library(rlang)
+```
+
+## Signalling Conditions
+Three conditions that you can signal:
+* errors - signal that there is no way for a function to continue and execution must stop
+* warnings - indicate that something has gone wrong but the function can recover
+* messages - inform the user that some action has been performed on their behalf
+
+### errors
+`stop()` generates errors. It typically includes the call but this can be turned off with `call. = FALSE` parameter. `rlang::abort()` also generates errors and does so without the call but it cannot put together complex error messages (which stop() can)
+
+Writing error messages in your functions is difficult but ideally they tell the user what is wrong and point them in the right direction to fix it
+
+### warnings
+`warning()` to create warnings (or `rlang::warn()`)
+
+You can have multiple warnings in a single function call and by default, the warnings will be cached and printed at the end of execution
+
+Warnings are best used to flag:
+* when you deprecate a function and want to encourage users to use the new function
+* when you are reasonably certain a function can recover from a problem
+
+Best to use warnings with restraint as errors or messages are often more appropriate
+
+### messages
+`message()` to create messages to keep the user informed
+
+Messages are informational and are good to use:
+* when a default argument requires a non-trivial amount of computation and you want to tell the user what value was used by default (or user-selected)
+* in functions that are called primarily for their side effects which would be silent (using messages to tell the user what's happening)
+* when you're starting a long running process with no intermediate output (progress bars are a better option)
+* when you want to display a message when your package has loaded (use `packageStartupMessage()` instead)
+
+## Ignoring Conditions
+Wrap code with the following functions to ignore conditions:
+
+* ignore errors with `try()`
+  * allows execution to continue even after an error has occurred
+  * it can be useful to do assignment inside try() because it lets you define a default value if the code does not succeed
+```{r}
+default <- NULL
+try(default <- read.csv("possibly-bad-input.csv"), silent = TRUE)
+```
+
+* ignore warnings with `suppressWarnings()`
+* ignore messages with `suppressMessages()`
+
+## Handling Conditions
+Condition handlers allow us to temporarily override default behaviours of conditions
+
+Registration functions: `tryCatch()` and `withCallingHandlers()`. They take the signalled condition as their argument
+Syntax has the same basic form:
+```{r}
+tryCatch(
+  error = function(cnd) {
+    # code to run when error is thrown
+  },
+  code_to_run_while_handlers_are_active
+)
+
+withCallingHandlers(
+  warning = function(cnd) {
+    # code to run when warning is signalled
+  },
+  message = function(cnd) {
+    # code to run when message is signalled
+  },
+  code_to_run_while_handlers_are_active
+)
+```
+
+`tryCatch()` defines exiting handlers. After the condition is handled, control returns to the context where tryCatch() was called
+
+`withCallingHandlers()` defines calling handlers. After the condition is captured control returns to the context where the condition was signalled
+
+### condition objects
+Created implicitly when a condition is signalled but become explicit when inside the handler
+
+`rlang::catch_cnd()` catches a condition object created by a signalled condition
+```{r}
+cnd <- catch_cnd(stop("An error"))
+str(cnd)
+#> List of 2
+#>  $ message: chr "An error"
+#>  $ call   : language force(expr)
+#>  - attr(*, "class")= chr [1:3] "simpleError" "error" "condition"
+```
+
+Built-in conditions are lists with two elements:
+* message - a character vector containing the text to display to the user
+* call - the called that triggered the condition (note: it is usually NULL)
+
+Conditions have a class attribute too so they are actually S3 objects
+
+### exit handlers
+`tryCatch()` registers exiting handlers and is typically used to handle error conditions. It can be used to override default error behaviour
+```{r}
+f3 <- function(x) {
+  tryCatch(
+    error = function(cnd) NA,
+    log(x)
+  )
+}
+
+f3("x")
+#> [1] NA
+# NA returned rather than throwing an error
+```
+
+If no conditions are signalled or the class of the signalled condition does not match the handler name, the code executes normally. 
+
+After a condition is signalled in tryCatch(), control passes to the handler and never returns to the original code, effectively meaning that the code exits. The protected code is evaluated in the environment of tryCatch() but the handler code is not. Handler functions are called with a single argument, the condition object. By convention the argument is called "cnd"
+
+tryCatch() has one other argument: finally, which specifies a block of code to run regardless of whether the initial expression succeeds or fails. This is functionally similar to on.exit()
+
+### calling handlers
+`withCallingHandlers()` sets up calling handlers: code execution continues as normal once the handler returns
+
+Calling and exit handlers are slightly different:
+* exiting handlers handle a signal like you handle a problem, you make it go away
+* calling handlers handl a signal like you handle a car, the car still exists
+```{r}
+tryCatch(
+  message = function(cnd) cat("Caught a message!\n"), 
+  { # this block is not run because the code is terminated once the exiting handler completes
+    message("Someone there?")
+    message("Why, yes!")
+  }
+)
+#> Caught a message!
+
+withCallingHandlers(
+  message = function(cnd) cat("Caught a message!\n"), 
+  { # this block is run because a calling handler does not exit
+    message("Someone there?")
+    message("Why, yes!")
+  }
+)
+#> Caught a message!
+#> Someone there?
+#> Caught a message!
+#> Why, yes!
+```
+
+One important side-effect unique to calling handlers is the ability to muffle the signal. By default, a condition will continue to propagate to parent handlers all the way up to the default handler:
+```{r}
+# Bubbles all the way up to default handler which generates the message
+withCallingHandlers(
+  message = function(cnd) cat("Level 2\n"),
+  withCallingHandlers(
+    message = function(cnd) cat("Level 1\n"),
+    message("Hello")
+  )
+)
+#> Level 1
+#> Level 2
+#> Hello
+
+# Bubbles up to tryCatch
+tryCatch(
+  message = function(cnd) cat("Level 2\n"),
+  withCallingHandlers(
+    message = function(cnd) cat("Level 1\n"),
+    message("Hello")
+  )
+)
+#> Level 1
+#> Level 2
+```
+
+You can prevent bubbling up to run the rest of the code in the block with `rlang::cnd_muffle()`
+```{r}
+# Muffles the default handler which prints the messages
+withCallingHandlers(
+  message = function(cnd) {
+    cat("Level 2\n")
+    cnd_muffle(cnd)
+  },
+  withCallingHandlers(
+    message = function(cnd) cat("Level 1\n"),
+    message("Hello")
+  )
+)
+#> Level 1
+#> Level 2
+
+# Muffles level 2 handler and the default handler
+withCallingHandlers(
+  message = function(cnd) cat("Level 2\n"),
+  withCallingHandlers(
+    message = function(cnd) {
+      cat("Level 1\n")
+      cnd_muffle(cnd)
+    },
+    message("Hello")
+  )
+)
+#> Level 1
+```
+
+## Custom Conditions
+Most function in R generate one of the built-in conditions, which contain only a message and a call. This can make error handling tricky, particularly if you want to detect a specific type of error
+
+`rlang::abort()` allows you to create conditions that can contain additional metadata. The basic structure:
+```{r}
+abort(
+  "error_not_found", # name of the type of error
+  message = "Path `blah.csv` not found",  # message for the user
+  path = "blah.csv" # custom metadata
+)
+#> Error: Path `blah.csv` not found
+```
+
+### signalling
+Example:
+```{r}
+abort_bad_argument <- function(arg, must, not = NULL) {
+  msg <- glue::glue("`{arg}` must {must}") # create a nice error message for the user
+  if (!is.null(not)) {
+    not <- typeof(not)
+    msg <- glue::glue("{msg}; not {not}.")
+  }
+  
+  abort("error_bad_argument", 
+    message = msg,  # store metadata for the developer
+    arg = arg, 
+    must = must, 
+    not = not
+  )
+}
+```
+
+## Applications
+### failure value
+A wrapper to return a default value if an error occurs using `tryCatch()`
+```{r}
+fail_with <- function(expr, value = NULL) {
+  tryCatch(
+    error = function(cnd) value,
+    expr
+  )
+}
+
+fail_with(log(10), NA_real_)
+#> [1] 2.3
+fail_with(log("x"), NA_real_)
+#> [1] NA
+```
+
+### success and failure values
+A wrapper to return a value if the code evaluates successfully and another if it fails. The basic structure would be:
+```{r}
+foo <- function(expr) {
+  tryCatch(
+    error = function(cnd) error_val,
+    {
+      expr
+      success_val
+    }
+  )
+}
+```
