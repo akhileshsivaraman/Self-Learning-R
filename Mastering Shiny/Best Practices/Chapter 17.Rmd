@@ -1,0 +1,40 @@
+---
+title: "Best Practices"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Code Organisation
+Best place to start is to improve the readability and understandability of your code. General guidelines:
+* are variable and function names clear and concise?
+* do you have comments where needed to explain complex bits of code?
+* does this whole function fit on my screen? could it be broken up into smaller pieces?
+* are you copying and pasting the same block of code over and over? can you make it a function?
+* are all the parts of the app tangled together or can you manage the different components of the app in isolation
+
+
+## Testing
+Methods of testing:
+* unit testing - confirming the correct behaviour of an individual function
+* integration testing - confirming the interactions between reactives
+* functional testing - validating the end to end experience from a browser
+* load testing - ensuring the app can withstand the amount of traffic you anticipate
+
+Testing can be automated to make it easier and through continuous integration these tests can be run every time you make a change to the code before publishing the app
+
+
+## Dependency Management
+Useful packages:
+* `renv` for capturing the exact package versions that your app uses
+* `config` for tracking and managing dependencies that are not R packages (e.g. a CSV file or the URL of an API)
+  * having the dependencies enumerated in the config file gives you a single place where you can track and manage them
+  * it also enables you to create different configurations for different environments (e.g. one config for production and one for testing where the production env connects the app to the real database and the testing env connects it to a test database)
+
+
+## Continuous Integration/Deployment
+Once you are using a version control system and have a robust set of automated tests, you may benefit from CI. CI is a way to perpetually validate that the changes you make to an app don't break it. CI can be done retroactively and proactively.
+
+There are a range of services you can connect to a Git repo and automatically run tests when you push a new commit or propose changes. E.g. GitHub Actions
