@@ -208,8 +208,8 @@ When designing a module server, you need to think about who is going to provide 
 `stopifnot()` can be used to help verify this. E.g. we can check that data is reactive and filter is not reactive in the server:
 ```{r}
 selectVarServer <- function(id, data, filter = is.numeric) {
-  stopifnot(is.reactive(data))
-  stopifnot(!is.reactive(filter))
+  stopifnot(is.reactive(data)) # will only run if is.reactive evaluates to true, i.e. if data is reactive
+  stopifnot(!is.reactive(filter)) # will only run if filter is not reactive
   
   moduleServer(id, function(input, output, session) {
     observeEvent(data(), {
@@ -224,4 +224,292 @@ Alternatively, it could be more useful to use if statements and `stop()` with a 
 
 Checking that module inputs are reactive or not helps you avoid a common problem when you mix modules with other input controls. `input$var` is not a reactive so when you pass an input value into a module, you'll need to wrap it in a `reactive()`.
 
-### Modules inside of modules
+### Case study: histogram
+The key challenge of creating modules is creating functions that are flexible enough to be used in multiple places, but simple enough to be easily understood.
+
+The UI:
+```{r}
+histogramOutput <- function(id) {
+  tagList(
+    numericInput(NS(id, "bins"), "bins", 10, min = 1, step = 1),
+    plotOutput(NS(id, "hist"))
+  )
+}
+```
+
+The server:
+```{r}
+histogramServer <- function(id, x, title = reactive("Histogram")) {
+  stopifnot(is.reactive(x))
+  stopifnot(is.reactive(title))
+  
+  moduleServer(id, function(input, output, session) { # note: we can have a module inside a module
+    output$hist <- renderPlot({
+      req(is.numeric(x()))
+      main <- paste0(title(), " [", input$bins, "]")
+      hist(x(), breaks = input$bins, main = main)
+    }, res = 96)
+  })
+}
+```
+The server module has two additional inputs:
+* x - a variable to plot
+* title - the title for the histogram
+Both of these inputs are reactive. title has a default value and as we want it to be reactive, we wrap the default value in `reactive()`
+
+The app (making use of modules defined in the chapter):
+```{r}
+histogramApp <- function() {
+  ui <- fluidPage(
+    sidebarLayout(
+      sidebarPanel(
+        datasetInput("data", is.data.frame),
+        selectVarInput("var"),
+      ),
+      mainPanel(
+        histogramOutput("hist")    
+      )
+    )
+  )
+  
+  server <- function(input, output, session) {
+    data <- datasetServer("data")
+    x <- selectVarServer("var", data)
+    histogramServer("hist", x)
+  }
+  shinyApp(ui, server)
+} 
+```
+
+### Multiple outputs
+It would be a nice feature if the name of the variable selected was in the title of the histogram. Currently, `selectVarServer()` only returns the value of the variable but we can update it to return both the name and the value:
+```{r}
+selectVarServer <- function(id, data, filter = is.numeric) {
+  stopifnot(is.reactive(data))
+  stopifnot(!is.reactive(filter))
+  
+  moduleServer(id, function(input, output, session) {
+    observeEvent(data(), {
+      updateSelectInput(session, "var", choices = find_vars(data(), filter))
+    })
+    
+    list(
+      name = reactive(input$var),
+      value = reactive(data()[[input$var]])
+    )
+  })
+}
+```
+
+We then just update the app:
+```{r}
+histogramApp <- function() {
+  ui <- fluidPage(
+    sidebarLayout(
+      sidebarPanel(
+        datasetInput("data", is.data.frame),
+        selectVarInput("var"),
+      ),
+      mainPanel(
+        histogramOutput("hist")    
+      )
+    )
+  )
+  
+  server <- function(input, output, session) {
+    data <- datasetServer("data")
+    x <- selectVarServer("var", data)
+    histogramServer("hist", x$value, x$name)
+  }
+  shinyApp(ui, server)
+} 
+```
+
+The challenge with this approach is remembering/knowing when you use the reactive (`x$value`) vs when you use its value (`x$value()`). The trick is remembering that when passing an argument to a module, you want the module to react to the value changing which means that you have to pass the reactive, not its current value.
+
+
+## Case Studies
+Module inputs: additional arguments to the module server can be reactives or constants. The choice is a design decision that you make based on who sets the arguments and when they change. You should always check that the arguments are of the expected type to avoid unhelpful error messages (e.g. `stopifnot()`).
+
+Return values: unlike app servers, modules servers can return values. The return value of a module should always be a reactive, or a list of reactives (as demonstrated in Multiple outputs).
+
+### Limited selection + other
+An important use case of modules is giving complex UI elements a simpler UI. Here we create a small set of options displayed with radio buttons coupled with an "other" field. The inside of this module uses multiple input elements but from the outside it works as a single combined object.
+
+```{r}
+radioExtraUI <- function(id, label, choices, selected = NULL, placeholder = "Other") {
+  other <- textInput(NS(id, "other"), label = NULL, placeholder = placeholder)
+  
+  names <- if (is.null(names(choices))) choices else names(choices)
+  values <- unname(choices)
+  
+  radioButtons(NS(id, "primary"), 
+    label = label,
+    choiceValues = c(names, "other"),
+    choiceNames = c(as.list(values), list(other)),
+    selected = selected
+  )
+}
+```
+The UI has extra inputs/parameters in: label, choices, selected and placeholder. Label, choices and selected are passed onto `radioButtons()`. `textInput()` is used to create a placeholder that defaults to "Other". To combine the text box and radio button, we take advantage of the fact that `choiceNames` can be a list of HTML elements, including, another input widget. So, essentially, we artificially create an other option by creating a `textInput()` element that can be rendered as a `choiceName`. Note: if the user selects the "Other" radiobutton, `radioButtons()` will return "other" as the input value, not the value typed into `textInput()`. This is dealt with in the server.
+
+```{r}
+radioExtraServer <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    observeEvent(input$other, ignoreInit = TRUE, { # ignoreInit tells observeEvent to ignore the handler expression
+      updatepdateRadioButtons(session, "primary", selected = "other") # changes the name of the radio button
+    })
+    
+    reactive({
+      if (input$primary == "other") {
+        input$other
+      } else {
+        input$primary
+      }
+    })
+  })
+}
+```
+When the user selects "Other", we use a reactive and an if statement to take the value they type into `textInput()` as the value of the server module.
+
+Put together, it looks like this:
+```{r}
+radioExtraApp <- function(...) { # ... is there to pass more arguments to radioExtraUI() is needed
+  ui <- fluidPage(
+    radioExtraUI("extra", ...),
+    textOutput("value")
+  )
+  server <- function(input, output, server) {
+    extra <- radioExtraServer("extra")
+    output$value <- renderText(paste0("Selected: ", extra()))
+  }
+  
+  shinyApp(ui, server)
+}
+```
+
+
+### Wizard
+A wizard interface is a style of UI where you break a complex process down into a series of simple pages that the user works through one-by-one. The creation of this wizard will be automated so that you do not need to worry about how each page is connected.
+
+The main part of the wizard UI are the buttons:
+```{r}
+nextPage <- function(id, i) {
+  actionButton(NS(id, paste0("go_", i, "_", i + 1)), "next") # each input element needs to have a unique ID, the unique ID includes the current page's ID and the ID of the destination page (e.g. go_1_2)
+}
+prevPage <- function(id, i) {
+  actionButton(NS(id, paste0("go_", i, "_", i - 1)), "prev")
+}
+```
+Each page has two buttons: one to take the user to the next page and one to return them to the previous page.
+
+The wizard page:
+```{r}
+wrapPage <- function(title, page, button_left = NULL, button_right = NULL) {
+  tabPanel(
+    title = title, 
+    fluidRow(
+      column(12, page)
+    ), 
+    fluidRow(
+      column(6, button_left),
+      column(6, button_right)
+    )
+  )
+}
+```
+The wizard page has a title, its contents (page) and the two buttons.
+
+The whole UI:
+```{r}
+wizardUI <- function(id, pages, doneButton = NULL) {
+  stopifnot(is.list(pages))
+  n <- length(pages)
+  
+  wrapped <- vector("list", n) # create a list for the number of pages desired
+  for (i in seq_along(pages)) {
+    # First page only has next; last page only prev + done
+    lhs <- if (i > 1) prevPage(id, i)
+    rhs <- if (i < n) nextPage(id, i) else doneButton
+    wrapped[[i]] <- wrapPage(paste0("page_", i), pages[[i]], lhs, rhs) # create the contents of each page
+  }
+  
+  # Create tabsetPanel
+  # https://github.com/rstudio/shiny/issues/2927
+  wrapped$id <- NS(id, "wizard")
+  wrapped$type <- "hidden" # we want the tabs to be hidden so the user cannot skip pages
+  do.call("tabsetPanel", wrapped) # is functionally the same as writing out `tabsetPanel(wrapped[[1]], wrapped[[2]], ..., id = NS(id, "wizard"))`
+}
+```
+We loop over a list of supplied pages, create the buttons, then wrap up the supplied page into a `tabPanel()` and combine the panels together into `tabsetPanel()`.
+
+
+With the server, we just need to make the buttons work so that users of the app can move from one page to another.
+The server:
+```{r}
+wizardServer <- function(id, n) {
+  moduleServer(id, function(input, output, session) {
+    changePage <- function(from, to) { # define a function to change the page
+      observeEvent(input[[paste0("go_", from, "_", to)]], {
+        updateTabsetPanel(session, "wizard", selected = paste0("page_", to)) # changes the selected tab
+      })  
+    }
+    ids <- seq_len(n)
+    lapply(ids[-1], function(i) changePage(i, i - 1))
+    lapply(ids[-n], function(i) changePage(i, i + 1))
+  })
+}
+```
+To carry out the function of the buttons, we need an `observeEvent()` for each button then call `updateTabsetPanel()`. But, as we don't know how many pages there will be in the app, we need to do some functional programming to set up (n-1)*2 observers, two observers for each page except the first and last, which only need one. `input[[]]` is used as a dynamic control to filter for the page we want. `lapply()` is used to loop over all the previous buttons, on all except the first page, and then again for all the next buttons, except for on the last page.
+
+
+Putting it all together, we get:
+```{r}
+wizardApp <- function(...) {
+  pages <- list(...)
+  
+  ui <- fluidPage(
+    wizardUI("whiz", pages) # we don't create a done button here but it could be done with actionButton()
+  )
+  server <- function(input, output, session) {
+    wizardServer("whiz", length(pages))
+  }
+  shinyApp(ui, server)
+}
+```
+Note: we need to ensure that the `n` argument of `wizardServer()` is consistent with the `pages` argument of `wizardUI()` (i.e. n = the length of the pages list)
+
+
+An example of putting the module into use:
+```{r}
+page1 <- tagList(
+  textInput("name", "What's your name?")
+)
+page2 <- tagList(
+  numericInput("age", "How old are you?", 20)
+)
+page3 <- tagList(
+  "Is this data correct?",
+  verbatimTextOutput("info")
+)
+
+ui <- fluidPage(
+  wizardUI(
+    id = "demographics", 
+    pages = list(page1, page2, page3), 
+    doneButton = actionButton("done", "Submit")
+  )
+)
+server <- function(input, output, session) {
+  wizardServer("demographics", 3) # n argument equals the length of pages
+
+  observeEvent(input$done, showModal( # after the wizard server runs, we run something to tell the user that it has finished
+    modalDialog("Thank you!", footer = NULL)
+  ))
+  
+  output$info <- renderText(paste0( 
+    "Age: ", input$age, "\n",
+    "Name: ", input$name, "\n"
+  ))
+}
+```
