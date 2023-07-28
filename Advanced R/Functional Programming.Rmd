@@ -1,0 +1,979 @@
+---
+title: "Functional Programming"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<https://adv-r.hadley.nz/fp.html>
+
+# Functionals
+A functional is a function that takes a function as the input and returns a vector as the output. A simple functional:
+
+```{r}
+randomise <- function(f) f(runif(1e3))
+randomise(mean)
+#> [1] 0.506
+randomise(mean)
+#> [1] 0.501
+randomise(sum)
+#> [1] 489
+```
+
+Functionals are often used as an alternative to for loops. They better communicate what should be done with the results. Each functional is tailored for a specific task so you immediately know why it's being used.
+
+`purrr` has many functionals and they have equivalents in base R.
+
+```{r}
+library(purrr)
+```
+
+## My First Functional: `map()`
+
+The most fundamental function is `map()`. It takes a vector and a function, calls the function once for each element of the vector and returns the results in a list.
+
+E.g.
+```{r}
+triple <- function(x) x * 3
+map(1:3, triple)
+#> [[1]]
+#> [1] 3
+#> 
+#> [[2]]
+#> [1] 6
+#> 
+#> [[3]]
+#> [1] 9
+```
+
+`map()` simply creates a list of the same length as the input then fills in the list with a for loop using the results.
+
+The base equivalent of `map()` is `lapply()` and the only difference is that `lapply()` doesn't support helpers.
+
+### Producing atomic vectors
+`map()` returns a list but this can be inconvenient when a simpler data structure would do so there are four more specific variants in the map family:
+
+-   `map_lgl()` - returns a logical
+-   `map_int()` - returns an integer
+-   `map_dbl()` - returns a double
+-   `map_chr()` - returns a character
+
+All map functions can take any type of vector as input and return an output vector the same length as the input - so every call to the function must return a single value (if not, you'll get an error). You'll also get an error if the function returns the wrong type of result so it can be useful to use `map()` to see what the problematic output is.
+
+Base R has two apply functions that can return atomic vectors:
+
+-   `sapply()` - returns a list, vector or matrix. It tries to simplify the result, which can cause problems
+-   `vapply()` - you can describe the output shape with the `FUN.VALUE` parameter
+
+### Anonymous functions and shortcuts
+The function specified in `map()` can be an inline anonymous function rather than an existing one. The syntax can be verbose because you have to constantly type out `function(x)` followed by the anonymous function so `purrr` supports a shortcut using `~`, which effectively subs in for `function(x)`:
+```{r}
+map_dbl(mtcars, function(x) length(unique(x)))
+map_dbl(mtcars, ~ length(unique(.x)))
+```
+Note: the arguments in the anonymous functions use `.`
+
+`map()` functions also have shortcuts for extracting elements from a vector powered by `pluck()`. Instead of providing a function, you use indexing. You can use a character vector to select elements by name, an integer vector to select by position or a list to select by both name and position. These are very useful for working with deeply nested lists, which often arise when working with JSON.
+```{r}
+x <- list(
+  list(-1, x = 1, y = c(2), z = "a"),
+  list(-2, x = 4, y = c(5, 6), z = "b"),
+  list(-3, x = 8, y = c(9, 10, 11))
+)
+
+# Select by name
+map_dbl(x, "x")
+#> [1] 1 4 8
+
+# Or by position
+map_dbl(x, 1)
+#> [1] -1 -2 -3
+
+# Or by both
+map_dbl(x, list("y", 1))
+#> [1] 2 5 9
+
+# You'll get an error if a component doesn't exist:
+map_chr(x, "z")
+#> Error: Result 3 must be a single string, not NULL of length 0
+
+# Unless you supply a .default value
+map_chr(x, "z", .default = NA)
+#> [1] "a" "b" NA
+```
+
+### Passing arguments with `...`
+In map functions, you can pass additional arguments with an anonymous function:
+```{r}
+x <- list(1:5, c(1:10, NA))
+map_dbl(x, ~ mean(.x, na.rm = TRUE))
+```
+
+Or, you can simply specify them after the function:
+```{r}
+map_dbl(x, mean, na.rm = TRUE)
+```
+
+There is a subtle difference between the two approaches: in an anonymous function, additional arguments are evaluated every time the function (not the anonymous function) is executed, not just when you call `map()`. So, if the additional argument is a function that could have a different output every time it is run, you will need to exercise caution in how you pass it.
+
+### Argument names
+`map()`'s two main arguments are `.x` and `.f` because functions that you pass into map may take arguments title `x` or `f` so this avoids confusion and problems. If the function you want to pass to `map()` takes `.x` or `.f` then you should use an anonymous function.
+
+The apply family avoids the problem of having multiple arguments with the same name by capitalising the names of the arguments.
+
+### Varying another argument
+In most cases when you use `map()`, it is the first argument that you want to "vary"/be different for each evaluation but there may be times when you want or need the first argument to be constant while another argument needs to be variable. There is no direct way to achieve this so we need to be creative...
+
+The simplest technique is to use an anonymous function to rearrange the argument order:
+```{r}
+# example: exploring the effects of different amounts of trimming when computing the mean (the first argument will need to be constant while the trimming varies)
+trims <- c(0, 0.1, 0.2, 0.5)
+x <- rcauchy(1000)
+
+map_dbl(trims, ~ mean(x, trim = .x)) # the regular mean function in map would normally take .x as the vector to use
+#> [1] -0.3500  0.0434  0.0354  0.0502
+```
+
+Or:
+
+```{r}
+map_dbl(trims, function(trim) mean(x, trim = trim))
+#> [1] -0.3500  0.0434  0.0354  0.0502
+```
+
+## Purrr Style
+Example of how `purrr` can be used: fitting a model to each subgroup of a dataset and extracting a coefficient of the model
+
+First, we breakdown the mtcars dataset into groups defined by the number of cylinders:
+
+```{r}
+by_cyl <- split(mtcars, mtcars$cyl)
+# split is a base function
+```
+
+The output is a list of three data frames (cars with 4, 6 and 8 cylinders)
+
+To fit a linear model to each group then extract the second coefficient, we could use `purrr` like this:
+
+```{r}
+by_cyl %>% 
+  map(~ lm(mpg ~ wt, data = .x)) %>% # using the anonymous function shorthand for the model
+  map(coef) %>% # extracting model coefficients
+  map_dbl(2) # indexing by position
+#>     4     6     8 
+#> -5.65 -2.78 -2.19
+```
+
+## Map Variants
+There are 23 primary variants of `map()` but they essentially just cover different ideas:
+
+-   `modify()` - output same type as input
+-   `map2()` - iterate over two inputs
+-   `imap()` - iterate with an index
+-   `walk()` - return nothing
+-   `pmap()` - iterate over any number of inputs
+
+We can organise the map functions into a matrix with inputs in the rows and outputs in the columns
+
+|                      |          |              |             |           |
+|----------------------|----------|--------------|-------------|-----------|
+|                      | List     | Atomic       | Same type   | Nothing   |
+| One argument         | `map()`  | `map_lgl()`  | `modify()`  | `walk()`  |
+| Two arguments        | `map2()` | `map2_lgl()` | `modify2()` | `walk2()` |
+| One argument + index | `imap()` | `imap_lgl()` | `imodify()` | `iwalk()` |
+| N arguments          | `pmap()` | `pmap_lgl()` | \-          | `pwalk()` |
+
+Once you've mastered the idea in a row, you can combine it with any column and likewise, once you've mastered the idea in a column, you can combine it with any row.
+
+
+### Same type of output as input: `modify()`
+If you wanted to double every column in a data frame and avoid `map()` turning the output into a list, you can use `modify()`:
+```{r}
+df <- data.frame(
+  x = 1:3,
+  y = 6:4
+)
+
+map(df, ~ .x * 2)
+#> $x
+#> [1] 2 4 6
+#> 
+#> $y
+#> [1] 12 10  8
+
+modify(df, ~ .x * 2)
+#>   x  y
+#> 1 2 12
+#> 2 4 10
+#> 3 6  8
+```
+
+### Two inputs: `map2()` and friends
+`map()` is vectorised over a single argument, `.x`, so it only varies `.x` when calling a function and all other arguments are passed along unchanged. This can make it unsuited to certain problems, for example, finding the weighted mean when you have a list of observations and a list of weights. `map2()` is vectorised over two arguments so in each call to the function, `.x` and `.y` are varied in parallel.
+```{r}
+xs <- map(1:8, ~ runif(10))
+xs[[1]][[1]] <- NA
+ws <- map(1:8, ~ rpois(10, 5) + 1)
+
+map2_dbl(xs, ws, weighted.mean)
+#> [1]    NA 0.451 0.603 0.452 0.563 0.510 0.342 0.464
+```
+
+If you have additional arguments, they still go after the function. `map2()` recycles inputs to make sure that they're the same length.
+
+### No outputs: `walk()` and friends
+Useful for when you call functions for their side effects (e.g. `cat()` or `write_csv()`) where it doesn't make sense to capture their results.
+
+`cat()` as an example:
+```{r}
+welcome <- function(x) {
+  cat("Welcome ", x, "!\n", sep = "")
+}
+names <- c("Hadley", "Jenny")
+
+# As well as generate the welcomes, it also shows 
+# the return value of cat()
+map(names, welcome)
+#> Welcome Hadley!
+#> Welcome Jenny!
+#> [[1]]
+#> NULL
+#> 
+#> [[2]]
+#> NULL
+```
+`map()` technically works because it generates the desired welcome messages but it also returns NULL values. `walk()` solves this by ignoring the return values of the function and instead returning `.x` invisibly.
+```{r}
+walk(names, welcome)
+#> Welcome Hadley!
+#> Welcome Jenny!
+```
+
+`walk2()` is a useful variants because a common side effect we make use of is saving something to disk and when saving something to disk we always have a pair of values: the object and the path you want to save it to:
+```{r}
+temp <- tempfile()
+dir.create(temp)
+
+cyls <- split(mtcars, mtcars$cyl)
+paths <- file.path(temp, paste0("cyl-", names(cyls), ".csv"))
+walk2(cyls, paths, write.csv)
+
+dir(temp)
+#> [1] "cyl-4.csv" "cyl-6.csv" "cyl-8.csv"
+```
+
+### Iterating over values and indices
+There are three basic ways to loop over a vector with a for loop:
+
+* loop over the elements: `for (i in j)`
+* loop over the numeric indices: `for (i in seq_along(j))`
+* loop over the names: `for (i in names(j))`
+
+Looping over elements is equivalent to `map()` while looping over numeric indices and names is equivalent to `imap()`, which allows you to iterate over the values and indices of a vector in parallel.
+
+`imap()` is a bit like `map2()` in that the function gets called with two arguments but here both are derived from the vector. `imap(x, f)` is equivalent to `map2(x, names(x), f)` if `x` has names, and `map2(x, seq_along(x), f)` if it does not.
+
+`imap()` can be useful for constructing labels: (if the vector is unnamed, the second argument will be the index)
+```{r}
+imap_chr(iris, ~ paste0("The first value of ", .y, " is ", .x[[1]]))
+#>                             Sepal.Length 
+#> "The first value of Sepal.Length is 5.1" 
+#>                              Sepal.Width 
+#>  "The first value of Sepal.Width is 3.5" 
+#>                             Petal.Length 
+#> "The first value of Petal.Length is 1.4" 
+#>                              Petal.Width 
+#>  "The first value of Petal.Width is 0.2" 
+#>                                  Species 
+#>   "The first value of Species is setosa"
+```
+
+### Any number of inputs: `pmap()` and friends
+You supply `pmap()` with a single list that contains any number of arguments. In most, cases the list will have vectors of equal-length (i.e. something very similar to a data frame). The varying argument come before the function and the constant arguments afterwards.
+
+`pmap(list(x, y), f)` is equivalent to `map2(x, y, f)`.
+
+A big difference between `pmap()` and other map functions is that you get much finer control over argument matching because you can name the components of the list. So taking the example of exploring the effects of different amounts of trimming when computing the mean:
+```{r}
+trims <- c(0, 0.1, 0.2, 0.5)
+x <- rcauchy(1000)
+
+pmap_dbl(list(trim = trims), mean, x = x)
+#> [1] -6.6740  0.0210  0.0235  0.0151
+```
+
+`pmap()` works well with data frames and a handy way to create a data frame is with `tribble()`, which allows you to describe a data frame row-by-row. This can make it easier to think about the parameters of a function as a data frame. E.g. using the parameters of `runif()` as the names of the columns
+```{r}
+params <- tibble::tribble(
+  ~ n, ~ min, ~ max,
+   1L,     0,     1,
+   2L,    10,   100,
+   3L,   100,  1000
+)
+
+pmap(params, runif)
+#> [[1]]
+#> [1] 0.332
+#> 
+#> [[2]]
+#> [1] 53.5 47.6
+#> 
+#> [[3]]
+#> [1] 231 715 515
+```
+
+
+## Reduce Family
+### Basics
+`reduce()` takes a vector of length n and produces a vector of length 1 by calling a function with a pair of values at a time. `reduce(1:4, f)` is equivalent to `f(f(f(1, 2), 3), 4)`. `reduce()` is a useful way to generalise a function that works with two inputs (known as a binary function) to work with any number of inputs. 
+
+Example: we have a list of numeric vectors and we want to find common values that occur in every element
+```{r}
+# generate some sample data
+l <- map(1:4, ~ sample(1:10, 15, replace = T))
+str(l)
+#> List of 4
+#>  $ : int [1:15] 7 1 8 8 3 8 2 4 7 10 ...
+#>  $ : int [1:15] 3 1 10 2 5 2 9 8 5 4 ...
+#>  $ : int [1:15] 6 10 9 5 6 7 8 6 10 8 ...
+#>  $ : int [1:15] 9 8 6 4 4 5 2 9 9 6 ...
+
+# normally, you could use intersect() repeatedly to solve this
+out <- l[[1]]
+out <- intersect(out, l[[2]])
+out <- intersect(out, l[[3]])
+out <- intersect(out, l[[4]])
+out
+#> [1] 8 4
+
+# but we can automate this process with `reduce()`
+reduce(l, intersect)
+#> [1] 8 4
+
+# similarly, we could use union() instead of intersect() to work out the elements that appear at least once
+reduce(l, union)
+#> 7 1 8 3 2 4 10 5 9 6
+```
+
+As with the map family, you can pass additional arguments following the function. `Reduce()` is the base equivalent to `reduce()`
+
+### Accumulate
+`accumulate()` is useful for understanding how reduce works. It returns intermediate results and the final result:
+```{r}
+accumulate(l, intersect)
+#> [[1]]
+#>  [1]  7  1  8  8  3  8  2  4  7 10 10  3  7 10 10
+#> 
+#> [[2]]
+#> [1]  1  8  3  2  4 10
+#> 
+#> [[3]]
+#> [1]  8  4 10
+#> 
+#> [[4]]
+#> [1] 8 4
+```
+
+### Output types
+When x is length 1, `reduce()` just returns the input, which means it has no way to check that the input is valid. When x is length 0, `reduce()` produces an error suggesting that we need to use `.init`. But what should the value of `.init` be? In `reduce()`, `.init` would be an additional argument, which in effect means that it is called as `f(.init, x)` when `reduce()` is called so the value of `.init` should be 0 so as not to change the value of the subsequent input.
+
+When we supply `.init = 0`, `reduce()` also checks if the input is valid. So, when using it, always supply `.init` and consider what the function should return when you pass a vector of length 0 or 1. 
+
+### Multiple inputs
+If you need to pass two arguments to the function that you're reducing, you can use `reduce2()`. An example use case is when you have a list of data frames that you want to join together and the variables you use to join will vary from element to element. (It's rare to come across a use case.)
+
+The length of the second argument in `reduce2()` is dependent on whether or not `.init` is supplied. If you have four elements of x, the function will only be called three times but if you supply `.init`, the function will be called four times.
+
+### Map-reduce
+map-reduce is a map combined with a reduce
+
+
+## Predicate Functionals
+A predicate is a function that returns a single TRUE or FALSE, e.g. `is.character()` and we say a predicate matches a vector if it returns TRUE. 
+
+### Basics
+A predicate functional applies a predicate to each element of a vector. There are seven predicate functionals in purrr and they come in three groups:
+
+* early terminators
+  * `some(.x, .p)` - returns TRUE if any element matches so terminates upon seeing the first match
+  * `every(.x, .p)` - returns TRUE if all elements match so terminates upon seeing the first FALSE
+  * `none(.x, .p)` - returns TRUE if no element matches so terminates upon a match
+* `detect(.x, .p)` - returns the value of the first match; `detect_index()` returns the location of the first match
+* `keep(.x, .p)` - keeps all matching elements; `discard(.x, .p)` drops all matching elements
+
+Example of using predicate functionals:
+```{r}
+df <- data.frame(x = 1:3, y = c("a", "b", "c"))
+detect(df, is.factor)
+#> NULL
+detect_index(df, is.factor)
+#> [1] 0
+
+str(keep(df, is.factor))
+#> 'data.frame':    3 obs. of  0 variables
+str(discard(df, is.factor))
+#> 'data.frame':    3 obs. of  2 variables:
+#>  $ x: int  1 2 3
+#>  $ y: chr  "a" "b" "c"
+```
+
+### Map variants
+`map()` and `modify()` come in variants that also take predicate functions transforming only the elements of `.x` where `.p` is TRUE
+```{r}
+df <- data.frame(
+  num1 = c(0, 10, 20),
+  num2 = c(5, 6, 7),
+  chr1 = c("a", "b", "c"),
+  stringsAsFactors = FALSE
+)
+
+str(map_if(df, is.numeric, mean))
+#> List of 3
+#>  $ num1: num 10
+#>  $ num2: num 6
+#>  $ chr1: chr [1:3] "a" "b" "c"
+str(modify_if(df, is.numeric, mean))
+#> 'data.frame':    3 obs. of  3 variables:
+#>  $ num1: num  10 10 10
+#>  $ num2: num  6 6 6
+#>  $ chr1: chr  "a" "b" "c"
+str(map(keep(df, is.numeric), mean))
+#> List of 2
+#>  $ num1: num 10
+#>  $ num2: num 6
+```
+
+
+## Base Functionals
+### Matrices and arrays
+`map()` and friends are specialised for working with 1D vectors while `apply()` is specialised for working with 2D and higher vectors (matrices and arrays). `apply()` can be thought of as an operation that summarises a matrix or array by collapsing each row or column to a single value.
+
+`apply()` has four arguments:
+
+* X - a matrix or array to summarise
+* MARGIN - an integer vector giving the dimensions to summarise over, 1 = rows, 2 = columns, etc
+* FUN - a summary function
+* ... - arguments to pass onto FUN
+
+Example of `apply()` in action:
+```{r}
+a2d <- matrix(1:20, nrow = 5)
+apply(a2d, 1, mean)
+#> [1]  8.5  9.5 10.5 11.5 12.5
+apply(a2d, 2, mean)
+#> [1]  3  8 13 18
+```
+
+You can also provide `MARGIN` with multiple dimensions in a vector:
+```{r}
+a3d <- array(1:24, c(2, 3, 4))
+apply(a3d, 1, mean)
+#> [1] 12 13
+apply(a3d, c(1, 2), mean)
+#>      [,1] [,2] [,3]
+#> [1,]   10   12   14
+#> [2,]   11   13   15
+```
+
+There are caveats to using `apply()`:
+
+* you have no control over the output type. It is automatically simplified to a list, matrix or vector
+  * never use `apply()` with a data frame because the result will always be coerced to a matrix, which leads to undesirable results if your data frame contains anything other than numbers
+* if the FUN is the identity operator, the output is not always the same as the input
+
+### Mathematical concerns
+`integrate()` finds the area under the curve defined by `f()`
+
+`uniroot()` finds where `f()` hits zero
+
+`optimise()` finds the location of the lowest or highest value of `f()`
+
+Example:
+```{r}
+integrate(sin, 0, pi)
+#> 2 with absolute error < 2.2e-14
+str(uniroot(sin, pi * c(1 / 2, 3 / 2)))
+#> List of 5
+#>  $ root      : num 3.14
+#>  $ f.root    : num 1.22e-16
+#>  $ iter      : int 2
+#>  $ init.it   : int NA
+#>  $ estim.prec: num 6.1e-05
+str(optimise(sin, c(0, 2 * pi)))
+#> List of 2
+#>  $ minimum  : num 4.71
+#>  $ objective: num -1
+str(optimise(sin, c(0, pi), maximum = TRUE))
+#> List of 2
+#>  $ maximum  : num 1.57
+#>  $ objective: num 1
+```
+
+
+# Function Factories
+A function that makes functions. E.g.
+```{r}
+# power1() creates two child functions, square() and cube()
+power1 <- function(exp) {
+  function(x) {
+    x ^ exp
+  }
+}
+
+square <- power1(2)
+cube <- power1(3)
+```
+
+
+## Factory Fundamentals
+The key idea behind function factories: the enclosing environment of the manufactured function is an execution environment of the function factory
+
+(When a function is created, it binds/encloses the environment in which is created. And when a function runs it creates an ephemeral environment. The ephemeral environment created when a  function factory runs becomes the enclosing environment of its child function)
+
+### Environments
+What are the environments of `square()` and `cube()`:
+```{r}
+env_print(square)
+#> <environment: 0x7fe851f7ccc0>
+#> parent: <environment: global>
+#> bindings:
+#>  * exp: <dbl>
+
+env_print(cube)
+#> <environment: 0x7fe85508c390>
+#> parent: <environment: global>
+#> bindings:
+#>  * exp: <dbl>
+```
+This shows us that we have two different environments, both of which were originally execution environments of `power1()`. The two environments have the same parent, which is the enclosing environment of `power1()`. This also shows us that both environments have a binding to `exp` and to see its value, we need to get the environment of the function then extract the value:
+```{r}
+fn_env(square)$exp
+#> [1] 2
+
+fn_env(cube)$exp
+#> [1] 3
+```
+
+This is what makes manufactured functions behave differently to one another: names in the enclosing environment are bound to different values.
+
+### Forcing evaluation
+Due to lazy evaluation, we can run into bugs with manufactured functions:
+```{r}
+x <- 2
+square <- power1(x)
+x <- 3
+
+square(2)
+#> [1] 8
+# instead of squaring the value, the function cubed it
+```
+
+In general, this type of problem happens when a binding changes in between calling the factory function and calling the manufactured function
+
+We can solve this problem by forcing evaluation:
+```{r}
+power2 <- function(exp) {
+  force(exp)
+  function(x) {
+    x ^ exp
+  }
+}
+
+x <- 2
+square <- power2(x)
+x <- 3
+square(2)
+#> [1] 4
+```
+
+Whenever you create a function factory, make sure every argument is evaluated using `force()` as necessary (if the argument is only used by the manufactured function). 
+
+### Stateful functions
+Function factories also allow you to maintain state across function invocations, which is generally hard to do because of the fresh start principle (i.e. every time a function is called a new environment is created to host its execution).
+
+Maintaining states is made possible because:
+
+* the enclosing environment of the manufactured function is unique and constant
+* R has a super assignment operator `<<-`, which modifies bindings in the enclosing environment. `<-` creates a binding in the current environment. `<<-` rebinds an existing name in the parent environment.
+
+We can use these ideas to create a function that records how many times it has been called:
+```{r}
+new_counter <- function() {
+  i <- 0
+  
+  function() {
+    i <<- i + 1
+    i
+  }
+}
+
+counter_one <- new_counter()
+counter_two <- new_counter()
+```
+When the manufactured function is run, i will be modified in its enclosing environment and because manufactured functions have their own independent environments, they have independent counts.
+
+### Garbage collection
+In general, you can rely on the garbage collector to clean up any large temporary objects created inside a function. However, manufactured functions hold on to the execution environment so you'll need to explicitly unbind any large temporary objects with `rm()`
+
+Example:
+```{r}
+f1 <- function(n) {
+  x <- runif(n)
+  m <- mean(x)
+  function() m
+}
+
+g1 <- f1(1e6)
+lobstr::obj_size(g1)
+#> 8,013,104 B
+
+f2 <- function(n) {
+  x <- runif(n)
+  m <- mean(x)
+  rm(x)
+  function() m
+}
+
+g2 <- f2(1e6)
+lobstr::obj_size(g2)
+#> 12,944 B
+```
+
+
+## Grahpical Factories
+### Labelling
+`scales` makes it easy to customise labels on ggplot2. It provides many functions to control the fine details of the axes and legends.
+
+The formatter functions make it easier to control the appearance of axis breaks. They return a function, which you have to call in order to format a number. In other words, they are function factories.
+```{r}
+y <- c(12345, 123456, 1234567)
+comma_format()(y)
+#> [1] "12,345"    "123,456"   "1,234,567"
+
+number_format(scale = 1e-3, suffix = " K")(y)
+#> [1] "12 K"    "123 K"   "1 235 K"
+```
+
+We can use these, for example, in ggplot2's scales's label argument:
+```{r}
+df <- data.frame(x = 1, y = y)
+core <- ggplot(df, aes(x, y)) + 
+  geom_point() + 
+  scale_x_continuous(breaks = 1, labels = NULL) +
+  labs(x = NULL, y = NULL)
+  
+core
+core + scale_y_continuous(
+  labels = comma_format()
+)
+core + scale_y_continuous(
+  labels = number_format(scale = 1e-3, suffix = " K")
+)
+core + scale_y_continuous(
+  labels = scientific_format()
+)
+```
+
+### Histogram bins
+`binwidth` of `geom_histogram()` can be a function. This is useful because the function is executed once for each group, which means you can have different binwidths in different facets
+```{r}
+# construct some sample data with very different numbers in each cell
+sd <- c(1, 5, 15)
+n <- 100
+
+df <- data.frame(x = rnorm(3 * n, sd = sd), sd = rep(sd, n))
+
+ggplot(df, aes(x)) + 
+  geom_histogram(binwidth = 2) + 
+  facet_wrap(~ sd, scales = "free_x") + 
+  labs(x = NULL)
+```
+In this dataset, each facet has the same number of observations but the variability is very different. It would be nice to vary the binwidths such that we get approximately the same number of observations in each bin. We can use a function factory to do this:
+```{r}
+binwidth_bins <- function(n) {
+  force(n)
+  
+  function(x) {
+    (max(x) - min(x)) / n
+  }
+}
+
+ggplot(df, aes(x)) + 
+  geom_histogram(binwidth = binwidth_bins(20)) + 
+  facet_wrap(~ sd, scales = "free_x") + 
+  labs(x = NULL)
+
+
+# a look at what's happening
+a <- binwidth_bins(20)
+a
+
+env_print(a)
+fn_env(a)$n
+
+a(c(10, 1)) # evaluates to 9/20
+```
+
+
+
+## Function Factories and Functionals
+You can combine functionals and function factories to turn data into many functions. E.g. creating named power functions by iterating over a list of arguments:
+```{r}
+names <- list(
+  square = 2, 
+  cube = 3, 
+  root = 1/2, 
+  cuberoot = 1/3, 
+  reciprocal = -1
+)
+
+power1 <- function(exp) {
+  function(x) {
+    x ^ exp
+  }
+}
+
+funs <- purrr::map(names, power1)
+
+funs$root(64)
+#> [1] 8
+funs$root
+#> function(x) {
+#>     x ^ exp
+#>   }
+#> <bytecode: 0x7fe85512a410>
+#> <environment: 0x7fe85b21f190>
+```
+
+Note: `map()` can be simply substituted for `map2()`, `pmap()`, etc as needed
+
+One of the downsides of this method is that you have to prefix every function call with `funs$`. You can eliminate this syntax with:
+
+* `with()`: `with(funs, root(100))`
+* `attach()` and `detach()`:
+```{r}
+attach(funs)
+#> The following objects are masked _by_ .GlobalEnv:
+#> 
+#>     cube, square
+root(100)
+#> [1] 10
+detach(funs)
+```
+* `env_bind`: copy the functions to the global environment `env_bind(global_env), !!!funs)`
+
+
+# Function Operators
+A function operator is a function that takes one or more functions and returns a function as the output. They are essentially a function factory that takes a function as an input. 
+
+Example:
+```{r}
+# a function that makes a new function that prints out its first argument
+chatty <- function(f) {
+  force(f)
+  
+  function(x, ...) {
+    res <- f(x, ...)
+    cat("Processing ", x, "\n", sep = "")
+    res
+  }
+}
+f <- function(x) x ^ 2
+s <- c(3, 2, 1)
+
+purrr::map_dbl(s, chatty(f))
+#> Processing 3
+#> Processing 2
+#> Processing 1
+#> [1] 9 4 1
+```
+
+Like factories, there's nothing you can't do without function operators but they can help reduce complexity to make your code more reusable and readable. 
+
+## Existing Function Operators
+There are two very useful function operators:
+
+* `purrr::safely()`
+* `memoise::memoise()`
+
+### Capturing errors with `purrr::safely()`
+If one of the iterations in a for loop fails, you can still access all the results up to the failure.
+```{r}
+x <- list(
+  c(0.512, 0.165, 0.717),
+  c(0.064, 0.781, 0.427),
+  c(0.890, 0.785, 0.495),
+  "oops"
+)
+
+out <- rep(NA_real_, length(x))
+for (i in seq_along(x)) {
+  out[[i]] <- sum(x[[i]])
+}
+#> Error in sum(x[[i]]): invalid 'type' (character) of argument
+out
+#> [1] 1.39 1.27 2.17   NA
+```
+
+If an iteration fails in a functional, you get no output at all so it's hard to figure out where the problem is:
+```{r}
+map_dbl(x, sum)
+#> Error in .Primitive("sum")(..., na.rm = na.rm): invalid 'type' (character) of argument
+```
+
+`safely()` provides a tool to help. `safely()` transforms a function to turn errors into data
+
+`safely` with a normal function
+```{r}
+safe_sum <- safely(sum)
+safe_sum
+#> function (...) 
+#> capture_error(.f(...), otherwise, quiet)
+#> <bytecode: 0x7fafd9e2de58>
+#> <environment: 0x7fafd9e2d9c0>
+```
+
+Function operators takes a function and returns a wrapped function, which we can call as usual:
+```{r}
+str(safe_sum(x[[1]]))
+#> List of 2
+#>  $ result: num 1.39
+#>  $ error : NULL
+str(safe_sum(x[[4]]))
+#> List of 2
+#>  $ result: NULL
+#>  $ error :List of 2
+#>   ..$ message: chr "invalid 'type' (character) of argument"
+#>   ..$ call   : language .Primitive("sum")(..., na.rm = na.rm)
+#>   ..- attr(*, "class")= chr [1:3] "simpleError" "error" "condition"
+```
+
+The function transformed by `safely()` returns a list with two elements: `result` & `error`. If the function runs successfully, error is NULL and results contains the result. If the function fails, error contains the error and result is NULL.
+
+`safely()` with a functional
+```{r}
+out <- map(x, safely(sum))
+str(out)
+#> List of 4
+#>  $ :List of 2
+#>   ..$ result: num 1.39
+#>   ..$ error : NULL
+#>  $ :List of 2
+#>   ..$ result: num 1.27
+#>   ..$ error : NULL
+#>  $ :List of 2
+#>   ..$ result: num 2.17
+#>   ..$ error : NULL
+#>  $ :List of 2
+#>   ..$ result: NULL
+#>   ..$ error :List of 2
+#>   .. ..$ message: chr "invalid 'type' (character) of argument"
+#>   .. ..$ call   : language .Primitive("sum")(..., na.rm = na.rm)
+#>   .. ..- attr(*, "class")= chr [1:3] "simpleError" "error" "condition"
+```
+
+The output is a list of lists, one for each iteration. Each list contains the result and error for the iteration.
+
+This isn't the easiest thing to read so we can group the results and errors together with transpose:
+```{r}
+out <- transpose(map(x, safely(sum)))
+str(out)
+#> List of 2
+#>  $ result:List of 4
+#>   ..$ : num 1.39
+#>   ..$ : num 1.27
+#>   ..$ : num 2.17
+#>   ..$ : NULL
+#>  $ error :List of 4
+#>   ..$ : NULL
+#>   ..$ : NULL
+#>   ..$ : NULL
+#>   ..$ :List of 2
+#>   .. ..$ message: chr "invalid 'type' (character) of argument"
+#>   .. ..$ call   : language .Primitive("sum")(..., na.rm = na.rm)
+#>   .. ..- attr(*, "class")= chr [1:3] "simpleError" "error" "condition"
+```
+
+And, we can easily find the results that worked or the inputs that failed:
+```{r}
+ok <- map_lgl(out$error, is.null)
+ok
+#> [1]  TRUE  TRUE  TRUE FALSE
+
+x[!ok]
+#> [[1]]
+#> [1] "oops"
+
+out$result[ok]
+#> [[1]]
+#> [1] 1.39
+#> 
+#> [[2]]
+#> [1] 1.27
+#> 
+#> [[3]]
+#> [1] 2.17
+```
+
+This technique can be used in different situations, for example, fitting a generalised linear model to a list of data frames:
+```{r}
+fit_model <- function(df) {
+  glm(y ~ x1 + x2 * x3, data = df)
+}
+
+models <- transpose(map(datasets, safely(fit_model)))
+ok <- map_lgl(models$error, is.null)
+
+# which data failed to converge?
+datasets[!ok]
+
+# which models were successful?
+models[ok]
+```
+
+purrr has three other function operators that work similarly to `safely()`:
+
+* `possibly()`: returns a default value when there's an error. It doesn't tell you if an error occurred, like `safely()` does though, so it's best for cases where there's some obvious sentinel value (e.g. NA)
+* `quietly()`: turns output, messages and warning side effects into `output`, `message` and `warning` components of the output
+* `auto_browser()`: automatically executes `browser()` inside the function when there's an error
+
+### Caching computations with `memoise()`
+The function in `memoise()` will remember previous inputs and return cached results. A memoised function can run much faster but because it stores all of the previous inputs and outputs, it uses more memory. 
+
+Example:
+```{r}
+# a function that simulates an expensive operation
+slow_function <- function(x) {
+  Sys.sleep(1)
+  x * 10 * runif(1)
+}
+system.time(print(slow_function(1)))
+#> [1] 0.808
+#>    user  system elapsed 
+#>   0.000   0.001   1.120
+
+system.time(print(slow_function(1)))
+#> [1] 8.34
+#>    user  system elapsed 
+#>   0.003   0.000   1.019
+```
+
+When we memoise this function, it's slow when we call it with new arguments. But when we call it with arguments that it's seen before it's instantaneous:
+```{r}
+fast_function <- memoise::memoise(slow_function)
+system.time(print(fast_function(1)))
+#> [1] 6.01
+#>    user  system elapsed 
+#>   0.001   0.000   1.003
+
+system.time(print(fast_function(1)))
+#> [1] 6.01
+#>    user  system elapsed 
+#>    0.02    0.00    0.02
+```
+
+Memoising is an example of dynamic programming, where a complex problem can be broken down into many overlapping subproblems and remembering the results of a subproblem considerably improves performance.
+
+Be careful when memoising a function. If the function is not pure (the output does not depend only on the input), you will get misleading and confusing results.
