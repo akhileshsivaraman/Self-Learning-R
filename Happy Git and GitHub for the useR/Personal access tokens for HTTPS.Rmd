@@ -1,0 +1,109 @@
+---
+title: "Personal Access Token for HTTPS"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+https://happygitwithr.com/https-pat
+
+When we interact with a remote Git server, we have to include credentials in the request. Git can communicate with a remote server using HTTPS or SSH and these protocols use different credentials. With HTTPS, we use a personal access token (PAT).
+
+
+## TLDR
+You can create a PAT on GitHub https://github.com/settings/tokens or with `usethis::create_github_token()`, which just opens up that webpage.
+
+In the scopes, select repo, user and workflow (and gist) then click generate token. Save that token in a secure place because you can only see it the one time you generate it and you'll need it when you next use a Git operation. You'll be asked for a password but it's really asking you for the PAT.
+
+You can also store the PAT explicitly after generating it with `gitcreds::gitcreds_set()`:
+```{}
+> gitcreds::gitcreds_set()
+
+? Enter password or token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+-> Adding new credentials...
+-> Removing credentials from cache...
+-> Done.
+```
+
+
+## HTTPS vs SSH
+HTTPS is easier to work with.
+
+## Generate a personal access token
+When creating a PAT, one of the things you'll be asked for is a note to describe the purpose of the token. Naming each token after its use case is a good idea. It could be that you name the token after the computer or the project you are using it for.
+
+Once you're ready to generate the token, click generate token. You will not be able to view this PAT after closing the window so make sure you save it in some way. PATs should be treated like passwords.
+
+## Store your PAT
+Git credential stores are a convenient way of storing your PAT so that it can be accessed by Git, RStudio and packages. We can store the PAT in a Git credential store by:
+
+* calling a function to explicitly store or update credentials
+* do something in command line Git or RStudio that triggers a credential challenge
+
+### Call an R function to store your credentials
+There are two options here: `gitcreds` and `credentials`. Either package works well so it's just pick one and run with it.
+
+`gitcreds`
+Load up the package `library(gitcreds)` then run `gitcreds_set()`. If you don't have a PAT stored already, it will prompt you to enter one:
+```{}
+> gitcreds::gitcreds_set()
+
+? Enter password or token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+-> Adding new credentials...
+-> Removing credentials from cache...
+-> Done.
+```
+
+If you have a PAT stored already, gitcreds will show it:
+```{}
+> gitcreds::gitcreds_set()
+
+-> Your current credentials for 'https://github.com':
+
+  protocol: https
+  host    : github.com
+  username: PersonalAccessToken
+  password: <-- hidden -->
+
+-> What would you like to do? 
+
+1: Keep these credentials
+2: Replace these credentials
+3: See the password / token
+
+Selection: 2
+
+-> Removing current credentials...
+
+? Enter new password or token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+-> Adding new credentials...
+-> Removing credentials from cache...
+-> Done.
+```
+
+You can decide to change the credentials. If you're unsure, it's generally better to replace the credentials with a new one that you know to be good rather than stick with an old one that you're not sure will work.
+
+You can also check that you've stored credentials with `gitcreds_get()`:
+```{}
+gitcreds_get()
+#> <gitcreds>
+#>   protocol: https
+#>   host    : github.com
+#>   username: PersonalAccessToken
+#>   password: <-- hidden -->
+```
+
+
+The process using `credentials` is also very simple. We just use `set_github_pat()`
+```{}
+credentials::set_github_pat()
+#> If prompted for GitHub credentials, enter your PAT in the password field
+#> Using GITHUB_PAT from Jennifer (Jenny) Bryan (credential helper: osxkeychain)
+```
+
+
+## HTTPS PAT problems and solutions
+### PAT has expired
+When your PAT expires, just return to GitHub and click on its note. At this point, you can adjust scopes or expiration date and then click regenerate token. Then just use one of the packages above to set your credentials. 

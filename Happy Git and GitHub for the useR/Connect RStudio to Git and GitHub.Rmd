@@ -1,0 +1,25 @@
+---
+title: "Connect RStudio to Git and GitHub"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+https://happygitwithr.com/rstudio-git-github
+
+## Clone a GitHub repo with RStudio
+Copy the HTTPS or SSH URL of the repo of interest then start a new RStudio project: file -> new project -> version control -> git. You'll be prompted for a repository URL so paste the one you copied a little earlier. Do not change the default name given to the directory/project but do change the directory it'll live in and check "open in new session". 
+
+## Make local changes, save and commit
+After you make changes locally (e.g. changing the README.md file) and save them, you're ready to commit the changes:
+
+* click the Git tab
+* check the staged box for the file(s)
+* click commit to open a popup
+* type a message for the commit
+* click commit
+
+## Push local changes to GitHub
+Simply click the push button in the Git pane to push local changes to your remote GitHub repo.
