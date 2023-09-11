@@ -35,7 +35,7 @@ value_box_server <- function(id, species_manager){
         as.integer()
     })
     
-    value_box_title_event <- eventReactive(species_manager$button_trigger, {
+    value_box_title_event <- eventReactive(r$button_trigger, {
       paste0(species_manager$selected_species, " was spotted")
     }, ignoreNULL = F)
     

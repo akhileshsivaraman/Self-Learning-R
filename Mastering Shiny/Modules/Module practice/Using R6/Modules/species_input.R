@@ -27,8 +27,10 @@ species_input_UI <- function(id, species_names = NULL){
 species_input_server <- function(id, species_manager, reviewedData){ # place the R6 class in the server then call its methods/fields below and we don't return anything
   moduleServer(id, function(input, output, session){
     observeEvent(input$button, {
-      species_manager$set_vars(input$selected_species, input$button)
+      species_manager$set_vars(input$selected_species)
       species_manager$location_species
+      
+      r$button_trigger <- input$button
     }, ignoreNULL = F)
   })
 }

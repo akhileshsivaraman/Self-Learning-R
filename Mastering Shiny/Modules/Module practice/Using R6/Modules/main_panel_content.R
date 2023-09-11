@@ -30,7 +30,7 @@ main_panel_content_UI <- function(id){
 main_panel_content_server <- function(id, species_manager, species_df = NULL, world = NULL){
   moduleServer(id, function(input, output, session){
     
-    graph_title_event <- eventReactive(species_manager$button_trigger, {
+    graph_title_event <- eventReactive(r$button_trigger, {
       paste0("Sites where ", species_manager$selected_species, " has been observed")
     }, ignoreNULL = F)
     
@@ -38,7 +38,7 @@ main_panel_content_server <- function(id, species_manager, species_df = NULL, wo
       graph_title_event()
     })
     
-    species_plot <- eventReactive(species_manager$button_trigger, {
+    species_plot <- eventReactive(r$button_trigger, {
       plot_species(species_manager$selected_species, species_manager$location_species, species_df, world)
     }, ignoreNULL = F)
     

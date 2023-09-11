@@ -132,10 +132,12 @@ ui <- page_navbar(
 #---- server ----
 server <- function(input, output, session){
   species_manager <- SpeciesManager$new(reviewedData)
+  r <- reactiveValues() # create a reactive values object to store triggers
   
   a <- species_input_server("species_input_module", 
                             species_manager = species_manager, 
-                            reviewedData = reviewedData)
+                            reviewedData = reviewedData
+  )
   
   value_box_server("species_value_box_module", 
                    species_manager = species_manager

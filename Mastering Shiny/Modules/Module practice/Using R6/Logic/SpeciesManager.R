@@ -12,11 +12,9 @@ SpeciesManager <- R6::R6Class(
   
   public = list(
     selected_species = NULL,
-    button_trigger = NULL,
     
-    set_vars = function(selected_species, button_trigger){
+    set_vars = function(selected_species){
       self$selected_species <- selected_species
-      self$button_trigger <- button_trigger
     },
     
     initialize = function(reviewedData){
