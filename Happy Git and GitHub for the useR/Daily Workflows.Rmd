@@ -1,0 +1,423 @@
+---
+title: "Daily Workflows"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The Repeated Amend
+When you're doing something tricky, it can be beneficial to make lots of commits as you work towards your goal. Making lots of commits can be a safe way to work and the Repeated Amend pattern makes it easier to manage those commits by building up "good" commits gradually.
+
+## Workflow Sketch
+### Initial condition
+Start with you project in a functional condition (i.e. check that everything is working as it should) and make sure your "working tree is clean" & you are synced up with your GitHub remote. `git status` should show something like this:
+```{}
+~/tmp/myrepo % git status                                                          
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+```
+
+### Get to work
+Imagine we start at commit C, with B a previous commit and A one before that:
+```{}
+... -- A -- B -- C
+```
+
+Working from C, you make some changes then stage and commit them with "WIP" (work in progress) as the message:
+```{}
+git add path/to/the/changed/file
+git commit -m "WIP"
+```
+
+Your history will now be:
+```{}
+A -- B -- C -- WIP*
+```
+
+The * next to WIP indicates that a commit only exists in your local repo and is not on your GitHub remote. We don't push this change just yet. We do a bit more work, re-check that your project is still working and once you're ready to save a snapshot, you *amend* your previous commit rather than committing. RStudio has a checkbox for "Amend previous commit" or you can use the shell:
+```{}
+git commit --amend --no-edit
+```
+
+`--no-edit` retains the current commit message "WIP*". We haven't pushed yet so your history will be:
+```{}
+A -- B -- C -- WIP*
+```
+
+With "WIP*" representing your last two commits. You can continue using those steps iterating on your work until you're ready to commit/amend and push:
+```{}
+git commit --amend -m "Implement awesome feature; closes #43"
+git push
+```
+
+Now that you've made the push, your history will be:
+```{}
+A -- B -- C -- D
+```
+
+
+### What if I need to fall back?
+If you're in the middle of a repeated amend workflow and you make and save changes that have broken the project, you'll want to rollback to the last good state. We carry out what is called a "hard reset" to the WIP* state:
+```{}
+git reset --hard
+```
+
+A hard reset resets your files to their state at the most recent commit. 
+
+Alternatively, we can use RStudio to rollback the changes. RStudio also lets us select which files to reset. Click on "Diff" or "Commit". Select a file with changes you do not want. Use "Discard All" to discard all changes in that file. Use "Discard chunk" to discard specific changes in a file. Repeat this procedure for each affected file until you are back to an acceptable state. 
+
+
+# Dealing With Push Rejection
+Problem: you want to push changes to GitHub but you are rejected:
+```{}
+$ git push
+To https://github.com/YOU/REPO.git
+ ! [rejected]        main -> main (fetch first)
+error: failed to push some refs to 'https://github.com/YOU/REPO.git'
+hint: Updates were rejected because the remote contains work that you do
+hint: not have locally. This is usually caused by another repository pushing
+hint: to the same ref. You may want to first integrate the remote changes
+hint: (e.g., 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+```
+
+This means that the histories of your local repo and the remote repo on GitHub are not compatible (they have diverged). You can either use `git status` or just visit the remote on GitHub to get a sense of the divergence/the work that you do not have.
+
+## She Who Pushes First Wins
+When working with collaborators, the person who pushes first wins. They don't run into the rejection problem so they don't need to faff around with Git! Ideally, you should push to your remote often. This will make it easier to integrate different lines of work.
+
+## Stay In Touch
+The sooner you know about someone else's push to your remote the better. So, pull (or fetch) often. It is generally easier to integrate someone else's push earlier into your work than later.
+
+## Use Branches
+Branches afford explicit workflows for integrating different lines of work on your own terms. 
+
+
+# Pull, But You Have Local Work
+Problem: you want to pull changes from upstream but you have done some new work locally since the last time you pulled. (This often happens when you want to push, as above)
+
+Imagine you're dealing with the main branch and the remote is called origin. Recent commit history of origin/main is:
+```{}
+A--B--C
+```
+
+Recent commit history of the local main branch:
+```{}
+A--B--D
+
+OR
+
+A--B--(uncommited changes)
+```
+
+You'll want to get commit C into your local branch while retaining the work in commit D or your uncommitted changes.
+
+
+## Local Work Is Uncommitted
+The remote state is `A--B--C` and the local state is `A--B--(uncommitted changes)`
+
+Note: it is usually a lot simpler to just commit the changes locally then deal with pulling the remote changes
+
+### Happy simple cases
+There are two scenarios in which `git pull` will just work:
+* You've introduced completely new files to the project that don't exist in the remote branch so there can't be any conflicts. 
+* The files affected by your local work have no overlap with the files affected by the changes you need to pull from the remote.
+
+### `git stash` works, sometimes
+If your changes affect a file that has also been changed in commit C, you cannot use `git pull` (if you try, you'll get a rejection message). You must safeguard your local changes by either stashing or committing them.
+
+`git stash` is a way of temporarily storing some changes to get them out of the way so that you can do something else without a lot of fuss, e.g. pulling upstream changes. After pulling the changes from the remote, you'd reapply and deleted the stashed changes then carry on working. 
+
+The best case scenario for a stash is:
+```{}
+git stash save
+git pull
+git stash pop
+```
+And the output would look something like:
+```{}
+jenny@2015-mbp ethel $ git stash save
+Saved working directory and index state WIP on main: db046b4 Merge branch 'main'of github.com:jennybc/ethel
+
+jenny@2015-mbp ethel $ git pull
+Updating db046b4..2d33a6f
+Fast-forward
+ foo.R | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+jenny@2015-mbp ethel $ git stash pop
+Auto-merging foo.R
+On branch main
+Your branch is up-to-date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   foo.R
+
+no changes added to commit (use "git add" and/or "git commit -a")
+Dropped refs/stash@{0} (012c4dcd3a4c3af6757c4c3ca99a9eaeff1eb2a4)
+```
+
+Which means that you have achieved this:
+```{}
+      Remote: A--B--C
+
+Local before: A--B--(uncommitted changes)
+ Local after: A--B--C--(uncommitted changes)
+```
+
+This is a fast forward merge made possible by stashing then unstashing the uncommited local changes. 
+
+### `git stash` with conflicts
+Stashing is often not straightforward because you can have some overlap between your local changes and the changes you are pulling. In these cases, you will get a merge conflict from `git stash pop`. Consequently, you will need to resolve the merge conflict manually. At each locus of conflict, you must pick one version or the other (or create a hybrid yourself) and remove all the markers inserted to demarcate conflicts and save. Before being able to commit, you will also need to manually reset and delete the stash with:
+```{}
+git reset
+git stash drop
+```
+
+This will get you to:
+```{}
+      Remote: A--B--C
+
+Local before: A--B--(uncommitted changes)
+ Local after: A--B--C--(uncommitted changes*)
+```
+
+
+## Local Work Is Committed
+The remote state is `A--B--C` and the local state is `A--B--D`
+
+### Pull (fetch and merge)
+The simplest option is to fetch the commits from upstream and merge them, which is what `git pull` does. This is a good option if you are new to Git. It leads to a messier history but it's not that big an issue.
+
+The best case scenario is you have no merge conflicts when using `git pull`. You might be required to confirm or edit a commit message for the merge commit.
+
+If commit C and D have changes to the same parts of certain files, Git may not be able to automatically merge and you will get merge conflicts:
+```{}
+jenny@2015-mbp ethel $ git pull
+Auto-merging foo.R
+CONFLICT (content): Merge conflict in foo.R
+Automatic merge failed; fix conflicts and then commit the result.
+```
+
+You'll have to go through every locus of conflict manually (as above but without wasting time on `git stash`). Once done, you mark the affected files as resolved with `git add` and make an explicit `git commit` to finalise the merge:
+```{}
+jenny@2015-mbp ethel $ git add foo.R
+jenny@2015-mbp ethel $ git commit
+[main 20b297b] Merge branch 'main' of github.com:jennybc/ethel
+```
+
+With that process, we've done this with our history:
+```{}
+      Remote: A--B--C
+
+Local before: A--B--D
+ Local after: A--B--D--(merge commit)
+                  \_C_/
+```
+
+### Pull and rebase
+`git pull --rebase` create a nicer history than just `git pull` when integrating local and remote commits. It avoids a merge commit so the history is less cluttered and linear but it can make merge conflicts more onerous to resolve. 
+
+In the best case scenario, you'll have no merge conflicts so the history will just be:
+```{}
+      Remote: A--B--C
+
+Local before: A--B--D
+ Local after: A--B--C--D
+```
+
+It is still possible to have merge conflicts and if you have multiple local commits, you'll have to resolve conflicts over and over between C and D because the commits are sequentially replayed.
+
+If you get bogged down in merge conflicts, you can use `git rebase --abort` to back out and pursue a different method.
+
+
+## Other Approaches
+### Use a temporary branch for local work
+This can be used as an alternative to the stash workflow that has the advantage of giving you practice with Git techniques that are more useful. It also leads to a nice history.
+
+In this workflow, you create a new, temporary branch then commit your uncommitted changes there. Checkout to main and git pull to get changes from upstream. Now, you need to recover the work from the commit in the temporary branch. This can be done by merging the temporary branch into main or you can pick the commit from the temporary branch you want to merge into main.
+
+
+
+# Time Travel: See The Past
+When you want to see various files in your project as they were at some point in the past.
+
+## Hyperlinks Are Awesome
+GitHub makes it easy to inspect files and see how they've changed etc just by clicking so you don't need to use Git commands locally, which can be cumbersome. Additionally, you won't accidentally make new commits on a wrong branch because the repo is remote and files are read-only.
+
+## Browse Commit History and Specific Commits
+You can access commit history of a repo by clicking "xyz commits" (which is like using `git log` locally). When you look through your commits, you can then access more information:
+
+* you can copy the SHA-1 of the commit
+* click on the SHA-1 of the commit to view the diff associated with it
+* click on the double brackets to browse the state of the whole repo at that point in history
+
+If there's a commit of importance to you and your team, you can copy the URL from your browser and share it to facilitate discussions etc.
+
+## File Driven Inquiries
+### Blame
+The blame view of a file on GitHub works similarly to `git blame` in the command line. It tells you who last touched each line of a file, how long ago and the associated commit message. You can click on the commit message to visit that commit or click the stacked rectangles icon to move further back in time and stay in the blame view.
+
+### History
+The history view describes the commits of a file of interest. 
+
+### Hyperlink to specific lines at a specific state
+When viewing a file on GitHub, you can click on a line number to highlight it. Use "click... shift-click" to select a range of lines. Your browser's URL should be something like this:
+`https://github.com/OWNER/REPO/blob/SHA/path/to/file.R#L27-L31`
+
+
+# Fork and Clone
+Use fork and clone to get a copy of someone else's repo if there's any change you will want to propose a change to the owner, i.e. send a pull request.
+
+## Fork and Clone Without `usethis`
+In the upper right hand of the source repo, click fork. This creates a copy of the repo in your GitHub account and takes you there. You then clone your form (your remote copy) to your local machine. Cloning can be done in the command line, RStudio and/or with `usethis`.
+
+### Finish the fork and clone setup
+If you stop at this point in your setup, you have not created a direct connection with between your local copy and the source repo. This makes it harder for you to be up to date with developments in the source repo. You can set up the connection by configuring:
+
+1. the source repo as the `upstream` remote
+2. your local `main` branch to track `upstream/main`, not `origin/main`
+
+### Configure the `upstream` remote
+The first step is to get the URL of the source repo. Simply copy the HTTPS or SSH URL of the source repo on GitHub. Then configure the `upstream` remote:
+
+* with git
+```{}
+git remote add upstream URL
+```
+
+* with `usethis::use_git_remote()`
+```{r}
+usethis::use_git_remote(
+  name = "upstream",
+  URL = "URL"
+)
+```
+
+* in RStudio: click on "New Branch" in the Git pane. This will reveal a new button "Add Remote". Once you click it, enter `upstream` as the remote name and paste the URL. Click "Add" and decline the opportunity to add a new branch by clicking "Cancel".
+
+Finally, regardless of how you configured upstream, run this in the shell:
+`git fetch upstream`
+
+### Set upstream tracking branch for the default branch
+Here we set `upstream/main` from the source repo as the upstream tracking branch of local `main` so that a simple `git pull` pulls from the source repo, rather than from your fork. It also mean `git push` will likely be rejected since you don't have permission.
+
+First, fetch info for the upstream remote:
+`git fetch upstream`
+
+Then, also in the command line:
+`git branch -u upstream/main` OR `git branch --set-upstream-to upstream/main`
+
+## `usethis::create_from_github("URL", fork = TRUE)`
+`create_from_github()` conveniently does a fork and clone for you. The `fork` argument controls whether the source repo is cloned or forked an cloned. Note: you will need to have your PAT configured to fork and clone. 
+
+After you've got the URL for the source repo, simply run:
+```{r}
+usethis::create_from_github(
+  "URL",
+  destdir = "path",
+  fork = TRUE
+)
+```
+
+With the one function, we fork and clone a source repo and set up the upstream tracking branch.
+
+## Don't Mess With `main`
+If you make any commits in your local repo, work in a new branch, not `main`. 
+
+Avoid making commits to `main` of a repo you have forked. If you commit to `main` in a repo you don't own, it creates a divergence between that branch's history in the source repo and your own repo. Treat `main` as read-only! This will make it much easier when you want to pull upstream work into your copy.
+
+
+# Get Upstream Changes For a Fork
+When you have done a fork and clone and need to pull subsequent changes from the source repo into your copies (the remote and local ones).
+
+## Verify Your Local Repo's Configuration
+### List your remotes
+You can inspect the current remotes for your local repo.
+
+In the command line, use `git remote -v` and you'll get something like this:
+```{}
+origin    https://github.com/YOU/REPO.git (fetch)
+origin    https://github.com/YOU/REPO.git (push)
+upstream  https://github.com/OWNER/REPO.git (fetch)
+upstream  https://github.com/OWNER/REPO.git (push)
+```
+
+### View the upstream tracking branch
+Ideally, your local `main` branch has `upstream/main` (the source repo) as its upstream tracking branch. To check this in the shell, with the default branch checked out, use `git branch -vv`
+
+### Repair or complete your repo's configuration
+If you have `origin/main` (your remote fork) as your upstream tracking branch, reconfigure the `upstream` remote as described with git or `usethis::use_git_remote()`.
+
+## Verify That Your Working Tree Is Clean
+Before checking that your working tree is clean, let's make sure our configuration on the `upstream` remote is current:
+```{}
+git fetch upstream
+git status
+
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+```
+
+If you have modified files, you should either discard those changes or create a new branch and commit the changes there for safekeeping. Note: if you see that your branch can be fast-forwarded, you're fine to carry on.
+
+## Sync Option 1: Pull Changes From `upstream` Then Push To `origin`
+`git pull upstream main --ff-only`
+
+This says "pull the changes from the remote known as `upstream` in the `main` branch of my local repo"
+
+`--ff-only` says "if I have made my own commits to `main`, please force me to confront this problem now" (this is only possible if your branch can be fast-forwarded)
+
+Once you've pulled changes in the source repo to your local fork, you can push changes to your remote fork from your local fork:
+`git push origin main`
+
+## Sync Option 2: Sync Your Fork On GitHub, Pull Changes From `origin` To Local Repo
+On the main page of your remote fork (the `origin` remote) on GitHub, you'll see some information on how the state of `main` in your fork relates to `main` in the source repo, e.g. `This branch is 2 commits behind OWNER:main`, which indicates that you can sync up in the ideal fast-forward sense. But you may also see something like `This branch is 1 commit ahead, 2 commits behind OWNER:main`, which you will need to fix because you touched `main`.
+
+As long as you don't have any issues, you can click "Sync fork" and you'll get the message `This branch is up to date with OWNER/REPO:main`
+
+If you have made commits on the default branch of your fork, this can result in a merge commit or a merge conflict.
+
+Once you have successfully synced the default branch of your remote fork with the default branch of the source repo, you'll want to do the same for your local repo. This can be done by pulling from either `upstream` or `origin`:
+```{}
+git pull upstream main --ff-only
+git pull origin main --ff-only
+```
+
+## Um, What If I Did Touch `main`?
+Let's imagine this is the state of `main` in the source repo:
+`-- A -- B -- C -- D -- E -- F`
+And the state of `main` in your local repo is:
+`-- A -- B -- C -- X -- Y -- Z`
+
+The two histories agree up to commit C then diverge. If you want to preserve the work in commits X, Y and Z, create a new branch with tip at Z:
+`git checkout -b branch_name`
+
+This safeguards your work in X, Y and Z. Now checkout `main`:
+`git checkout main`
+
+Do a hard reset of the `main` branch to C:
+`git reset --hard C`
+
+The history of your local `main` is now compatible with its history in the source repo so we can pull changes from the `upstream` with `git pull upstream main --ff-only`.
+
+And now your local history for `main` should match that in the source repo:
+```{}
+-- A -- B -- C -- D -- E -- F
+```
+Or, if you chose to create a branch with your work:
+```{}
+-- A -- B -- C -- D -- E -- F (main)
+               \
+                -- X -- Y -- Z (branch_name)
+```
+
