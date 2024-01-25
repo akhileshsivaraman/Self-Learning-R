@@ -1,0 +1,19 @@
+---
+title: "DevOps Lessons for Data Science"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+DevOps aims to create software that builds security, stability and scalability into software from the beginning. As a data scientist, statistician or data engineer, you are also a software developer. General DevOps principles don’t entirely work for you though because you don’t have full control over your data flows. You take data generated elsewhere and try to make information signal available to the systems and people that need it. Software developers get to design systems that produce and consume its own data.
+
+
+There are best practices from DevOps that we can apply to the data science context:
+
+*	Managing environments – create explicit linkages between the code and the environment
+*	App architecture – managing the processing and presentation layers of your apps and securely connecting to data sources
+*	Monitoring and logging – building a system to monitor and log what’s happening in your apps
+*	Deployments – designing a robust deployment and promotion system
+*	Docker for data science – capturing and sharing the environment around code

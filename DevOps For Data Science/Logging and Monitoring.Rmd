@@ -1,0 +1,100 @@
+---
+title: "Logging and Monitoring"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Code will fail and you can't ensure that it'll happen at a convenient time. But you can make things easier to fix through observable code, a monitoring system and logging.
+
+
+#### Observing correctness
+Observability of general purpose software is primarily concerned with the operational qualities of the software (RAM use, CPU use, speed, crashes). For data science, a big concern is code that runs successfully but yields an incorrect result. Checking correctness of numbers and figures is very hard but the solution is to use process metrics to reveal a problem before it surfaces in your results.
+
+Correct architecture
+* Jobs are generally simpler to check for correctness than presentation layers
+* Having as many processes as possible in the data and processing layers makes them much easier to observe
+
+Things to check in job output
+* Quality of data joins
+  * Based on the number of rows, you know how many rows should be in a dataset after a join
+  * After recoding a categorical variable, check that the recoded values match what they should
+  * Goodness of fit metrics of an ML model
+
+
+
+#### Observing operations
+You still need to pay attention to operational qualities, like speed, responsiveness, resources being consumed, number of users and user interactions just before an error occurs
+
+The first step to making an app or API observable is to add logging
+* A basic form of logging is using print statements
+* There are logging packages too that are purpose-built for logging too
+  * When using a logging package, you create and parameterise a log session that persists as long as the R or Python session
+  * In the log session, you write log statements about what your code does
+  * And, when the log statement runs, it creates a log entry
+
+
+Logging in an app starting up in Python
+```{Python}
+import logging
+
+# Configure the log object
+logging.basicConfig(
+    format='%(asctime)s - %(message)s',
+    level=logging.INFO
+)
+
+# Log app start
+logging.info("App Started")
+```
+
+Logging in an app starting up in R
+```{r}
+# Configure the log object
+log <- log4r::logger()
+
+# Log app start
+log4r::info(log, "App Started")
+```
+    * Both R and Python will create an entry that looks like `DATE TIME INFO App started`
+
+
+Log entries contain three components
+
+* Log metadata - includes things like a timestamp and the server being used. It is added automatically on every entry
+* Log level - indicates the severity of the event you're logging (e.g INFO). There are generally 5-7 levels in logging libraries
+  * Debug - describes what the code was doing
+  * Info - something normal happened in the app
+  * Warn - an unexpected issue that isn't fatal
+  * Error - an issue that will not work but the app doesn't crash
+  * Critical - an error so big the app shuts down
+* Log data - describe the event being logged
+* When you initialise your logging session, you'll set a session log level, which is the least critical level you want to see in the logs for your session.
+
+
+Configure log formats
+
+* When you initialise a logging session, you'll choose where logs will be written and in what format
+* Default log format is plain text
+* You may want to use a structured format like JSON, YAML and XML, particularly if you're shipping your logs to an aggregation service
+
+
+Where logs go
+
+* By default, to the console
+  * If you want to choose a different place, you can configure it with a handler or an appender
+* In production, most common to send logs to a file on disk
+* Log rotation - the practice of deleting logs after a retention period
+  * This is done automatically by Python's {logging} package
+  * {log4r} does not do this automatically so it's useful to use the Linux package `logrotate`
+* In some cases, you may want to send your logs elsewhere, e.g. send it in an email if there is a critical event
+
+
+Working with metrics
+
+* Modern metrics stacks are built on Prometheus and Grafana (both open-source tools)
+* Prometheus - a monitoring tool that makes it easy to store metrics data, query it and alert based on it
+* Grafana - a dashboarding tool to visualise the metrics from Prometheus
+* Grafana Labs provides a SaaS service to run them but there is an official Prometheus client in Python and the {openmetrics} R package that makes registering metrics from a Plumber API or Shiny app easy

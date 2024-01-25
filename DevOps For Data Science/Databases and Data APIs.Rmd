@@ -1,0 +1,139 @@
+---
+title: "Databases and Data APIs"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Databases and data APIs are just sources of data.
+
+
+#### Accessing and using databases
+Databases are defined by their query-able interface, usually through SQL. Any database connection starts with creating a connection object and you’ll use this object to send SQL queries (which can be done with {sqlalchemy} in Python or {dblyr} in R).
+  
+*	In Python, packages for individual databases directly implement the API so we just call the .connect() method
+*	In R, the API is split into two parts. {DBI} implements the connection by working with database driver package, which is the first argument to DBI::dbConnect(). Note: not every database driver package in R is DBI-compliant
+*	If there is not a database-specific package, you’ll need to use a generic system driver with a package to interface with the system driver
+*	Data source name (DSN) holds the details of the connection, which makes connecting to a database straightforward as you don’t need to remember ports, usernames, passwords, etc
+*	System drivers come in two main varieties: Java Database Connectivity (JDBC) and Open Database Connectivity (ODBC). Both have packages in R and Python for making connections
+
+
+
+#### Providing credentials to data projects
+Credentialling
+
+*	Discretionary access control (DAC) is where you’re allowed to share data access permissions with others in your company
+*	Service account is a non-human account that exists to hold permissions for a project. It can be used to limit the project’s permissions to exactly what it needs or to manage the project’s permissions independently of the humans involved
+*	Using credentials of the person viewing the content and pass those along (the hardest option)
+* This can be a complex process that requires work with/from IT
+
+
+#### Connecting to APIs
+Packages that wrap APIs work in a similar way to using a database – you create a connection object that stores the connection details. If you are calling an API directly, use the {requests} package in Python and {httr2} in R.
+
+What is an API
+
+*	In this context, http-based REST-ful APIs
+*	HTTP operates on a request-response model – you send a request and the API sends back a response
+
+
+API endpoints and paths
+
+*	APIs have many endpoints, each of which lives on a path (looks like a directory)
+*	Each request to an API is directed to a specific endpoint
+*	The different endpoints can be sent different parameters and send back different things
+
+
+HTTP verbs/request methods
+
+*	Describes the type of operation you’re asking for
+*	Each endpoint has one or more verbs that it knows how to use
+*	GET – fetches information from the server
+* POST – provides information to the server
+*	PUT and PATCH – changes/updates
+*	DELETE - deletes
+* Request parameters and bodies
+  * Each endpoint accepts specific arguments; some are optional, some are required
+  * GET - arguments are specified via query parameters embedded in the URL after `?`
+  * POST, PUT and PATCH - arguments are provided in a body, usually formatted as JSON. {httr2} and {requests} have functionality to convert standard R and Python data types to JSON equivalents. APIs often require arguments to be nested in specific ways
+* Auth headers
+  * most APIs require authentication
+  * common forms of authentication: username and password, API keys and OAuth tokens
+  * API keys and OAuth tokens ofter have scopes that describe what they have permission to do (e.g. GET)
+* Request status codes
+  * indicate what happened with your request to the server
+  * 200 = success
+  * 400s = problem with the request and the API couldn't understand what you wanted
+  * 500s = request was fine but some error occurred in processing
+* Response bodies
+  * Bodies contain the contents of the response
+  * Usually come in JSON format so {json} and {jsonlite} needed to decode them
+* Common API patterns
+  * pagination - paginated APIs return only a certain number of results to keep sizes modest
+  * job APIs - when you have requested a long-running job, the API may return a job-id, which you can use to poll a job-status endpoint to check on progress and claim your result
+  * multiple verbs - an endpoint accepting multiple verbs
+
+
+
+#### Environment variables to secure data connections
+
+When you take an app to production, authenticating your data source while keeping your secrets secure is crucial
+
+* Never put your credentials in your code
+* The easiest way to achieve this is with an environment variable - these are set before your code starts
+* Getting environment variables
+  * Python
+    * read environment variables from the `os.environ` dictionary or by using `os.getenv("VAR_NAME")`
+  * R
+    * get environment variables with `Sys.getenv("VAR_NAME)`
+  * note: convention is to make environment variable names all caps with underscores separating words
+* Setting environment variables
+  * most common way to set environment variables is to lead secrets from a text file
+  * Python
+    * we usually read an `.env` file in the session
+    * {python-dotenv} is a good choice for doing this
+  * R
+    * automatically read the `.Renviron` file as environment variables and also sources the `.Rprofile` file where you can set environment variables using `Sys.setenv()`
+  * {keyring}
+    * a package in R and Python that allows you to use the system keyring to securely store environment variables and recall them at runtime
+  * in production, setting environment variables is harder and is covered later
+
+
+#### Data Connection Packages
+
+* Contain all the shared connection details for an organisation so that users don't have to remember them
+* Whether it's made in R or Python, the function in your package should return the database connection object for people to use
+* Example if you were using a Postgres database from R:
+```{r}
+#' Return a database connection
+#'
+#' @param user username, character, defaults to value of DB_USER
+#' @param pw password, character, defaults to value of DB_PW
+#' @param ... other arguments passed to 
+#' @param driver driver, defaults to RPostgres::Postgres
+#'
+#' @return DBI connection
+#' @export
+#'
+#' @examples
+#' my_db_con()
+my_db_con <- function(
+    user = Sys.getenv("DB_USER"), 
+    pw = Sys.getenv("DB_PW"), 
+    ..., 
+    driver = RPostgres::Postgres()
+) {
+  DBI::dbConnect(
+    driver = driver,
+    dbname = 'my-db-name', 
+    host = 'my-db.example.com', 
+    port = 5432, 
+    user = user,
+    password = pw, 
+    ...
+  )
+}
+```
+

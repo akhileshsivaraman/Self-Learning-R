@@ -1,0 +1,74 @@
+---
+title: "Demystifying Docker"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Docker is an open-source tool for building, sharing and running software and it is a popular tool because it makes code portable. In most cases, the only system prerequisite to run a Docker Container is Docker itself.
+
+Docker captures the entire reproducibility stack, all the way down to the operating system. Docker usually ensures that all code inside will run but it doesn't fully solve reproducibility or IT concerns. Integrations to other services must also be configured externally.
+
+
+### Container Lifecycle
+Docker is primarily concerned with the creation, movement and running of containers - a container is a software entity that packages code and its dependencies down to the operating system.
+
+A Docker Image is an immutable snapshot of a container. When you want to run a container, you pull the image and run it as an instance or a container that you'll interact with. (Note: some people use "container" when referring to an image). Images are usually stored in registries, which are similar to Git repos. The most common registry is Docker Hub. Images are built from Dockerfiles - the code that defines the image. And, Dockerfiles are usually stored in a git repo. Building and pushing images in a CI/CD pipeline is common so changes to the Dockerfile are immediately reflected in the registry.
+
+(We build a Dockerfile, which defines the image. The image is stored in a registry and we run a container instance by pulling the image)
+
+You can control Docker Containers from the Docker Desktop app but if you're using Docker on a server, you'll mostly interact via the command line interface where all Docker commands are formatted as `docker <command>`.
+
+Instances run on an underlying machine called a host. A primary feature of using a container is that they are ephemeral so anything inside an instance vanishes without a trace when the instance is shut down.
+
+
+Image Names
+
+* Every image has a name consisting of an id and a tag
+* The name allows us to reference an image
+* Tags specify versions and variants of containers and come after `<id>:`
+
+
+### Running Containers
+`docker run <image name>` runs a container image as an instance. To then do things with your instance, you need several command line flags:
+
+* `-name` - names an instance. If you don't provide a name for an instance, it will be assigned a random alphanumeric ID on start.
+* `-rm` - automatically removes the container after it's done. If you don't use it, the container will stick around until you clean it up manually with `docker rm`
+* `-d` - runs your container in detached mode. This is useful when you want to run your container in the background and not block your terminal session.
+
+
+
+Getting Information In and Out
+
+* When a container runs, it is isolated from the host - meaning programmes running inside the container can address the container's filesystem and networking without worrying about the host outside but if you want to use resources on the host, you need explicit declarations as part of the `docker run` command
+* To get data in or out of a container, you must mount a shared volume (directory) between the container and the host with `-v`
+* When specifying a host and a container, we separate them by using `:`
+* Anything in the volume will be available to the host and the container at the file paths specified
+* Example:
+  * data you need is in the following file path `/home/user/data`
+  * the container is at `/contained_project`
+  * command to mount a shared volume between the container and the host: `docker run -v /home/user/data:/contained_project`
+
+
+Other runtime commands
+
+* `docker ps` - lists your containers - this can be useful to get instance IDs if you didn't name them
+* `docker stop` - stop running a container
+* `docker kill` - terminates a container
+* `docker logs` - view logs from a container
+* `docker exec` - execute a command inside a running container
+
+
+### Building Images from Dockerfiles
+Useful Dockerfile commands for building most images:
+
+* `FROM` - specify the base image (usually the first line of the Dockerfile)
+* `RUN` - run any command as if you were on the command line inside the container
+* `COPY` - copy a file from the host file system into the container
+* `CMD` - specify which command to run on the container's shell when it runs (usually the last line)
+
+Every Dockerfile command defines a new layer. 
+
+Once your Dockerfile is ready, you build it into an image using `docker build -t <image name> <build directory>`. And then push it with `docker push <image name>`.

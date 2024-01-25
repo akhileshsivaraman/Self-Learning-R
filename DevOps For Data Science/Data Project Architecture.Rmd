@@ -1,0 +1,87 @@
+---
+title: "Data Project Architecture"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Poorly architected code is likely to break when you share it or go to production.
+
+
+
+#### The three-layer app
+
+The three-layer app is a standard software architecture that is useful for data science:
+
+*	Presentation layer - what the end user sees and directly interacts with
+*	Processing layer - processing that happens as a result of user interactions (sometimes called the business logic)
+*	Data layer – how and where the app stores and retrieves data
+*	In a data science project, there are a few things to consider differently to a software engineering project
+  * What is the output of the project? An app, a report, an API, etc
+  *	What are the different components of the project? ETL, modelling scripts, apps, etc
+  *	What does the output respond to and when? Usually data science projects run in response to updates to the underlying data, which can be on a schedule or a result of a trigger
+  *	How have the data layers been designed? Data format etc
+
+
+
+#### Presentation layer
+Data flows of your project will be dictated by your presentation layer choices so thinking about this layer is a good place to start. Data science projects can generally be placed into four categories:
+
+*	A job – changes something in another system, e.g. moving data, building a model, etc. Data engineers often write jobs using SQL, R and/or Python
+*	An app – for non-coders to explore data and generate insights
+*	A report – e.g. papers, books, presentations, websites. They can be completely static or have some level of interaction
+*	An API – for machine-to-machine communication. In general-purpose software, APIs are the backbone of how two distinct pieces of software communicate. In data science, APIs are mostly used to provide data feeds and on-demand predictions from ML models
+
+Guidelines to choose the right presentation layer
+*	If the results of your software are for machine-to-machine use
+  *	A job if it runs in batches
+  *	An API if you want results to be queried in real-time
+*	If the project is for humans to consume, an app or report
+*	Try to keep the presentation layer clean
+  *	Separate out other functions
+  *	The only code that belongs in the presentation layer is code that shows something to the user or that collects input from the user
+  *	Anything that creates the content to show the user or does something with their input should be in the processing layer
+  *	In a shiny app, you want the presentation layer to be doing reactive things while all the non-reactive parts happen in the processing layer
+
+
+
+#### Data
+When your data are small, it is perfectly fine to just load your data into your session and carry on. When your data are truly big, it cannot fit into your computer’s memory. In general, we’ll be using medium data, which you can load into memory but it’s large enough to slow your project down
+
+
+How can we deal with medium or big data?
+
+*	Pre-calculating – we can turn large data into smaller datasets in the presentation layer by calculating things users will often need/want
+*	Reduce data granularity – each additional dimension in your data multiplies the size of your dataset in the presentation layer. Knowing which dimensions are must haves can help cut down the data set
+*	Make big data small – avoid pulling all the data into your session
+  *	Push work to the data source (do the computation before pulling it into the session)
+  *	Be lazy with data pulls
+  *	Sample the data
+  *	Chunk and pull (separate the data into groups or parallel programming)
+*	Choose where you store data by how often the data are updated
+  *	If the data updates more frequently than the project code, you can put them outside the project bundle
+  *	Filesystem storage
+    *	Put the data in a location outside the app bundle
+  *	Blob storage or pins
+    *	Blob storage allows you to store and recall things by name
+    *	Blob storage is in the cloud
+    *	{pins} wraps using blob storage into neater code and can be used with a wide range of cloud drives
+  *	Googlesheets
+    *	Best not to use it as a permanent home for data but it can be a good intermediate
+    * It’s biggest weakness is that it is editable by someone who logs in (but this can be useful in some circumstances)
+*	Store intermediate artefacts in the right format
+  *	Your processing layer can likely be broken down into intermediate artefacts that move from one stage to the next
+  *	If you have rectangular data and you can write to a database, do that
+  *	If you cannot save the data to a database:
+    *	Flat files (various formats saved onto your computer)
+    *	CSV (but can get very large and slow to work with)
+    * RDS or pickle (can hold non-rectangular data)
+    *	DuckDB (an in-memory DB and query-able)
+*	Create an API if you need it
+  *	In data science, separating processing logic into functions is often sufficient
+  *	In general-purpose apps, APIs are usually used instead and they can still be useful if you have a long-running piece of business logic
+  *	An API can be thought of as a function as a service. It is a set of functions that run completely separate to the processes running in your app or report
+  * Creating an API can be very straightforward, especially if you’ve written functions for your app. {fastAPI} and {plumber} let you turn functions into APIs by adding specially-formatted comments
+  *	Mapping out how the data, including the intermediate artefacts, will flow through your layers makes it easier to understand in which layer each piece should sit

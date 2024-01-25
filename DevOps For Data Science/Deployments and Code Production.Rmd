@@ -1,0 +1,93 @@
+---
+title: "Deployments and Code Production"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Deployments and Code Production
+Continuous integration and continuous deployment & delivery workflow principles:
+
+* Central availability of source code, almost always in version control, allows you to build the project from scratch
+* Frequent and incremental additions to the production version of the code
+* Automation for carrying out the actual deployment
+* Automated testing on a pre-deployment version of the code
+
+
+Separate the production environment
+
+* CI/CD is all about quickly promoting code into production
+* There's a clear boundary between what is in production and what isn't
+* Three software environments generally: 
+  * dev - where new work is produced
+  * test - where code is tested for performance (sometimes combined with dev)
+  * prod - production environment
+* Criteria for good prod environments:
+  * Environment is created using code
+  * Changes happen via a promotion process that involves human validating code and automated tests
+  * No manual changes are made to the environment or the active code in production
+    * This means that when an issue arises, you must reproduce it in one of the lower environments before pushing the updates through the promotion process
+
+
+
+#### Dev and test environments
+
+* The guidelines above are standard across data science and software engineering. It is in the dev and test environments where the deployment process differs between the two
+* In data science, you need to have real data in your dev environment because you need to explore the data. In software engineering, you'd just need data formatted like the real data as the content itself doesn't matter
+* It can be useful to have a data science sandbox where you have read-only access to real data for experimentation, places to write mock data to test things and expanded access to R and Python pakcages for experiments
+
+
+
+#### Version control implements code promotion
+
+* Version control is a way to operationalise your code promotion process - the details of the process and who's involved is down to you and your organisation's needs
+* Version control allows you to:
+  * Keep the prod version of your code safe
+  * Give contributors a copy to work on
+  * Hosts tools to manage merging changes back together
+* The details of your promotion process are enshrined in your project's Git repo configuration
+* Recommendations for the configuration of Git branches:
+  * Maintain two long-running branches
+    * main is the prod version of your project and test is a long-running pre-prod version
+    * Code can only be promoted to main via a merge from test - direct pushes to main are not allowed
+    * New functionality is developed in short-lived feature branches that are merged into test when you think they're ready to go
+
+
+
+#### CI/CD automates Git operations
+
+* Git allows you to configure requirements for whatever approvals and testing you need
+* Your CI/CD tool sits on top of Git so that all the merging and branching does something
+  * The CI/CD pipeline watches the Git repo and does something based on a trigger (e.g. a push or merge)
+* The most common CI/CD operations are pre-merge checks (e.g. spell checking, code linting, automated testing) and post-merge deployments
+* CI/CD pipelines can be built into Git providers, e.g. GitHub Actions or Azure DevOps
+
+
+Configuring per-environment behaviour
+As you promote an app, you may want behaviour to look different. E.g. switch data sources from a dev database, switch a read-only app to write mode or use a different logging level.
+
+The easiest way to create per-environment behaviour is to:
+
+* Write code that includes flags that change behaviour
+* Capture the intended behaviour for each environment in a YAML config file (should not contain secrets)
+* Read in config files as your code starts
+* Choose values for the current environment based on an environment variable
+
+For example, if you have a project where in dev you use a read-only database and you want to switch to writing in the prod database in prod, you could have a config file like this:
+```{yml}
+dev:
+  write: false
+  db-path: dev-db
+
+test
+  write: true
+
+prod:
+  write: true
+  db-path: prod-db
+```
+Then, you'd set an environment variable to have the value dev in dev, test in test and prod in prod.
+
+The easiest way to read in a YAML config file is with `{yaml}` in Python and `{config}` in R.

@@ -1,0 +1,80 @@
+---
+title: "Environments as Code"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Your environment is the stack of software and hardware underlying your code but completely reproducing that environment is near impossible. There’s a tradeoff between making a project more reproducible and the amount of work it takes to get it to that state. The first step towards a more reproducible environment is to create and use environments as code. We want to make environments that are “stateless”. This means that we can create and destroy functionally identical copies of the environment without secret states being left behind.
+
+
+#### Environments have layers
+Data science environments have three layers:
+
+* Hardware
+  * Bottom layer
+  * The physical and virtual hardware (e.g. a virtual server) where the code runs
+* System
+  * Middle layer
+  * Includes the operating system, essential system libraries and language
+*	Package
+  * Python and R packages
+  * Data scientists generally should be handling the package layer because this is where we can have the greatest impact
+
+
+#### The package layer
+Packages can live in three places
+
+* Repositories - e.g. CRAN or BioConductor
+* Libraries – can hold at most one version of a package. Libraries can be specific to a project, a user or shared across a system
+* Loaded – taking the package out the library so its contents can be used
+* The library is what we can control for reproducibility
+
+A successful package environment as code setup has two key attributes:
+* Your package environment is isolated and cannot be disrupted by other activities on the same machine
+* Your package environment can be captured and transported elsewhere
+*	In python, virtual environments can be set up using {virtualenv} (also known as {venv})
+*	In R, we use {renv}
+
+
+
+#### Using a virtual environment
+Step 1: create standalone package libraries
+
+* Each project should have its own {renv}/{venv} library that includes, among other things, a virtual environment
+  * `renv::init()`
+  * `python3 -m venv /path/to/project/venv`
+    * convention is to store the virtual environment in a folder called venv. This is not checked into source control systems but the requirements file generated is
+* Note: if your project has multiple elements (e.g. an app, an API and an ETL script), it can be beneficial to use a git repo for the whole project with each element getting its own directory and virtual environment
+* When you work on a project, you activate the virtual environment
+
+Step 2: document environment state
+  
+* To make the environment portable, we document what’s in the package library. In R, you'll have to install the packages you need into the virtual environment, even if they are already installed globally. Python does not have the same requirement
+  * {renv} produces a lockfile to document what’s in the library and we update it with `renv::snapshot()`
+  * {venv} uses a requirements.txt file and we capture the dependencies with `pip freeze > requirements.txt` in the terminal
+
+Step 3: collaborate or deploy
+  
+* Commit lockfiles/requirements files
+
+Step 4: use a virtual environment
+  
+* When someone else downloads your project, the documented environment will be restored
+* If you’re not in a virtual environment, the library at the user-level is used by default
+
+
+
+#### Practical takeaways:
+
+* Use virtual environments for reproducibility
+* in R:
+  * use {renv} and its helper functions to create and update the virtual environment
+  * you need to install packages after creating the virtual environment, even if you already have them
+* in Python:
+  * use {virtualenv}
+  * `python3 -m venv /path/to/project/venv` creates the virtual environment and is run in the terminal rather than the console
+  * you then need to activate the virtual environment `source/path/to/project/venv/bin/activate` and once you're done deactivate it with `deactivate`
+  * `pip freeze --local > requirements.txt` captures the state of your environment in the project - this is the only Python-related file that is pushed to git (the venv folder should be placed in gitignore)
